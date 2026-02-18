@@ -28,6 +28,13 @@ const statusFromScore = (score) => {
   return 'steady';
 };
 
+const statusLabelFromClass = (badgeClass) => {
+  if (badgeClass === 'top-performer') return 'Top performer';
+  if (badgeClass === 'at-risk') return 'At risk';
+  if (badgeClass === 'steady') return 'Steady';
+  return 'Unrated';
+};
+
 const fetchProfiles = async () => {
   const response = await fetch(`${API_BASE}/profiles`);
   if (!response.ok) throw new Error('Unable to load profiles');
@@ -142,7 +149,7 @@ const renderProfiles = (profiles) => {
     const item = document.createElement('li');
     item.className = 'profile-item';
     const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
-    const badgeLabel = profile.ratings.length ? badgeClass : 'unrated';
+    const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
     item.innerHTML = `
       <strong>${profile.name}</strong>
       <div class="meta">
@@ -212,7 +219,7 @@ const renderWorkerProfile = (profiles, workerId) => {
   }).join('');
 
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
-  const badgeLabel = profile.ratings.length ? badgeClass : 'unrated';
+  const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>

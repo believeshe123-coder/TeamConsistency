@@ -15,31 +15,36 @@
 
       <section class="card">
         <h2>Add Rating</h2>
+        <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>.</p>
         <form id="rating-form">
           <div class="field-grid">
             <label>
-              Worker name
-              <input id="workerName" name="workerName" type="text" required minlength="2" placeholder="Jordan Patel" />
+              <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
+              <input id="workerName" name="workerName" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="worker-name-error" />
+              <span id="worker-name-error" class="field-error">Enter at least 2 characters for worker name.</span>
             </label>
 
             <label>
-              Category
-              <select id="category" name="category" required></select>
+              <span class="label-text">Category <span class="required-indicator" aria-hidden="true">*</span></span>
+              <select id="category" name="category" required aria-describedby="category-error"></select>
+              <span id="category-error" class="field-error">Select a category before saving.</span>
             </label>
 
             <label>
-              Predefined category rules
+              <span class="label-text">Predefined category rules</span>
               <select id="rating-rule-select" aria-label="Select predefined rating rule"></select>
             </label>
 
             <label>
-              Score (-10 to 10)
-              <input id="score" name="score" type="number" min="-10" max="10" step="0.1" value="5" required />
+              <span class="label-text">Score (-10 to 10) <span class="required-indicator" aria-hidden="true">*</span></span>
+              <input id="score" name="score" type="number" min="-10" max="10" step="0.1" value="5" required aria-describedby="score-error" />
+              <span id="score-error" class="field-error">Use a value between -10 and 10.</span>
             </label>
 
             <label>
-              Reviewer
-              <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" />
+              <span class="label-text">Reviewer <span class="required-indicator" aria-hidden="true">*</span></span>
+              <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" aria-describedby="reviewer-error" />
+              <span id="reviewer-error" class="field-error">Reviewer name is required.</span>
             </label>
           </div>
 
@@ -48,7 +53,7 @@
           </p>
 
           <label>
-            Notes (strengths / weaknesses)
+            <span class="label-text">Notes (strengths / weaknesses)</span>
             <textarea id="note" name="note" rows="4" placeholder="Great pace on loading dock, needs help with labeling accuracy."></textarea>
           </label>
 
@@ -61,26 +66,29 @@
 
       <section id="add-profile-panel" class="card hidden" aria-label="Add worker profile panel">
         <h2>Add Worker Profile</h2>
+        <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>.</p>
         <form id="add-profile-form">
           <div class="field-grid">
             <label>
-              Worker name
-              <input id="profileName" name="name" type="text" required minlength="2" placeholder="Jordan Patel" />
+              <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
+              <input id="profileName" name="name" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="profile-name-error" />
+              <span id="profile-name-error" class="field-error">Worker name must be at least 2 characters.</span>
             </label>
 
             <label>
-              Status
-              <select id="profileStatus" name="status" required>
+              <span class="label-text">Status <span class="required-indicator" aria-hidden="true">*</span></span>
+              <select id="profileStatus" name="status" required aria-describedby="profile-status-error">
                 <option value="">Select status</option>
                 <option value="Full-time">Full-time</option>
                 <option value="Part-time">Part-time</option>
                 <option value="New">New</option>
               </select>
+              <span id="profile-status-error" class="field-error">Choose a status to continue.</span>
             </label>
           </div>
 
           <label>
-            Background info
+            <span class="label-text">Background info</span>
             <textarea id="profileBackground" name="background" rows="4" placeholder="Experience, certifications, shift preferences, or other context."></textarea>
           </label>
 
@@ -106,13 +114,14 @@
           </div>
         </div>
         <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
+        <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
         <ul id="profiles" class="profiles"></ul>
       </section>
 
       <section class="card">
         <h2>Retrieve Worker Profile</h2>
         <label>
-          Worker
+          <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
           <select id="worker-selector" aria-label="Select worker profile"></select>
         </label>
         <div id="worker-profile-detail" class="profile-detail">
