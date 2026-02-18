@@ -1,5 +1,6 @@
 const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
+const RATING_RULES_KEY = 'worker-rating-rules-v1';
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -11,8 +12,13 @@ const clearButton = document.getElementById('clear-data');
 const categorySelect = document.getElementById('category');
 const workerSelector = document.getElementById('worker-selector');
 const workerProfileDetail = document.getElementById('worker-profile-detail');
+const rulesForm = document.getElementById('rating-rules-form');
+const rulesList = document.getElementById('rating-rules-list');
+const ruleSelect = document.getElementById('rating-rule-select');
+const applyRuleButton = document.getElementById('apply-rating-rule');
 
 let profilesCache = [];
+let ratingRules = [];
 
 const statusFromScore = (score) => {
   if (score >= 8.4) return 'top-performer';
@@ -61,6 +67,32 @@ const clearProfiles = async () => {
   if (!response.ok) throw new Error('Unable to clear profiles');
 };
 
+const loadRatingRules = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RATING_RULES_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((rule) => rule && rule.category && Number.isFinite(Number(rule.score))).map((rule) => ({
+      id: String(rule.id || crypto.randomUUID()),
+      condition: String(rule.condition || '').trim(),
+      category: String(rule.category).trim(),
+      score: Number(rule.score),
+      note: String(rule.note || '').trim(),
+    }));
+  } catch {
+    return [];
+  }
+};
+
+const saveRatingRules = () => {
+  localStorage.setItem(RATING_RULES_KEY, JSON.stringify(ratingRules));
+};
+
+const getKnownCategories = () => {
+  const fromRules = ratingRules.map((rule) => rule.category);
+  return [...new Set([...RATING_CATEGORIES, ...fromRules])];
+};
+
 const buildTrendText = (history) => {
   if (history.length < 2) return 'Not enough history yet';
 
@@ -74,7 +106,8 @@ const buildTrendText = (history) => {
 };
 
 const buildCategoryHistory = (ratings) => {
-  return RATING_CATEGORIES.reduce((history, category) => {
+  const categories = [...new Set([...getKnownCategories(), ...ratings.map((rating) => rating.category)])];
+  return categories.reduce((history, category) => {
     history[category] = ratings
       .filter((rating) => rating.category === category)
       .sort((a, b) => new Date(a.ratedAt).getTime() - new Date(b.ratedAt).getTime());
@@ -137,7 +170,7 @@ const renderWorkerProfile = (profiles, workerId) => {
 
   const categoryHistory = buildCategoryHistory(profile.ratings);
 
-  const categorySections = RATING_CATEGORIES.map((category) => {
+  const categorySections = Object.keys(categoryHistory).map((category) => {
     const history = categoryHistory[category] ?? [];
     const trend = buildTrendText(history);
 
@@ -184,14 +217,63 @@ const renderAll = (profiles) => {
 };
 
 const initializeCategoryOptions = () => {
+  const previous = categorySelect.value;
   categorySelect.innerHTML = '';
 
-  RATING_CATEGORIES.forEach((category) => {
+  getKnownCategories().forEach((category) => {
     const option = document.createElement('option');
     option.value = category;
     option.textContent = category;
     categorySelect.appendChild(option);
   });
+
+  if (previous && getKnownCategories().includes(previous)) {
+    categorySelect.value = previous;
+  }
+};
+
+const renderRuleSelect = () => {
+  const previous = ruleSelect.value;
+  ruleSelect.innerHTML = '<option value="">No predefined category selected</option>';
+
+  ratingRules.forEach((rule) => {
+    const option = document.createElement('option');
+    option.value = rule.id;
+    const condition = rule.condition ? `${rule.condition} → ` : '';
+    option.textContent = `${condition}${rule.category} (${rule.score})`;
+    ruleSelect.appendChild(option);
+  });
+
+  if (previous && ratingRules.some((rule) => rule.id === previous)) {
+    ruleSelect.value = previous;
+  }
+};
+
+const renderRules = () => {
+  rulesList.innerHTML = '';
+
+  if (!ratingRules.length) {
+    rulesList.innerHTML = '<li class="profile-item">No rating rules yet. Add one like “Full-time → Was late = -3”.</li>';
+    renderRuleSelect();
+    initializeCategoryOptions();
+    return;
+  }
+
+  ratingRules.forEach((rule) => {
+    const item = document.createElement('li');
+    item.className = 'profile-item rule-item';
+    item.innerHTML = `
+      <div>
+        <strong>${rule.category}</strong>
+        <p class="hint">Condition: ${rule.condition || '—'} | Score: ${rule.score}${rule.note ? ` | Note: ${rule.note}` : ''}</p>
+      </div>
+      <button type="button" class="secondary" data-delete-rule="${rule.id}">Delete</button>
+    `;
+    rulesList.appendChild(item);
+  });
+
+  renderRuleSelect();
+  initializeCategoryOptions();
 };
 
 const refreshFromBackend = async () => {
@@ -206,27 +288,123 @@ const toggleAddProfilePanel = (show) => {
   }
 };
 
+const buildRatingPayload = (data) => ({
+  workerName: data.get('workerName').toString().trim(),
+  category: data.get('category').toString().trim(),
+  score: Number(data.get('score')),
+  reviewer: data.get('reviewer').toString().trim(),
+  note: data.get('note').toString().trim(),
+  ratedAt: new Date().toISOString(),
+});
+
+const submitRating = async (rating) => {
+  const savedProfile = await saveRating(rating);
+  await refreshFromBackend();
+  workerSelector.value = String(savedProfile.id);
+  renderWorkerProfile(profilesCache, savedProfile.id);
+  return savedProfile;
+};
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const data = new FormData(form);
+  const rating = buildRatingPayload(data);
+
+  try {
+    await submitRating(rating);
+    form.reset();
+    document.getElementById('score').value = '5';
+    initializeCategoryOptions();
+    ruleSelect.value = '';
+  } catch (error) {
+    // eslint-disable-next-line no-alert
+    alert(error.message);
+  }
+});
+
+rulesForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+
+  const data = new FormData(rulesForm);
+  const category = data.get('ruleCategory').toString().trim();
+  const condition = data.get('ruleCondition').toString().trim();
+  const note = data.get('ruleNote').toString().trim();
+  const score = Number(data.get('ruleScore'));
+
+  if (!category || Number.isNaN(score)) return;
+
+  ratingRules.push({
+    id: crypto.randomUUID(),
+    condition,
+    category,
+    score,
+    note,
+  });
+
+  saveRatingRules();
+  renderRules();
+  rulesForm.reset();
+  document.getElementById('ruleScore').value = '0';
+});
+
+rulesList.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const ruleId = target.getAttribute('data-delete-rule');
+  if (!ruleId) return;
+
+  ratingRules = ratingRules.filter((rule) => rule.id !== ruleId);
+  saveRatingRules();
+  renderRules();
+});
+
+ruleSelect.addEventListener('change', () => {
+  const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
+  if (!selected) return;
+
+  categorySelect.value = selected.category;
+  document.getElementById('score').value = String(selected.score);
+
+  const noteField = document.getElementById('note');
+  if (!noteField.value && selected.note) {
+    noteField.value = selected.note;
+  }
+});
+
+applyRuleButton.addEventListener('click', async () => {
+  const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
+  if (!selected) {
+    // eslint-disable-next-line no-alert
+    alert('Select a predefined category rule first.');
+    return;
+  }
+
+  const workerName = document.getElementById('workerName').value.trim();
+  const reviewer = document.getElementById('reviewer').value.trim();
+  if (!workerName || !reviewer) {
+    // eslint-disable-next-line no-alert
+    alert('Worker name and reviewer are required to apply a predefined rule.');
+    return;
+  }
+
+  const existingNote = document.getElementById('note').value.trim();
+  const combinedNote = [selected.note, existingNote].filter(Boolean).join(' | ');
+
   const rating = {
-    workerName: data.get('workerName').toString().trim(),
-    category: data.get('category').toString().trim(),
-    score: Number(data.get('score')),
-    reviewer: data.get('reviewer').toString().trim(),
-    note: data.get('note').toString().trim(),
+    workerName,
+    category: selected.category,
+    score: selected.score,
+    reviewer,
+    note: combinedNote,
     ratedAt: new Date().toISOString(),
   };
 
   try {
-    const savedProfile = await saveRating(rating);
-    await refreshFromBackend();
-    workerSelector.value = String(savedProfile.id);
-    renderWorkerProfile(profilesCache, savedProfile.id);
-    form.reset();
+    await submitRating(rating);
     document.getElementById('score').value = '5';
-    categorySelect.value = RATING_CATEGORIES[0];
+    document.getElementById('note').value = '';
   } catch (error) {
     // eslint-disable-next-line no-alert
     alert(error.message);
@@ -281,7 +459,8 @@ clearButton.addEventListener('click', async () => {
   }
 });
 
-initializeCategoryOptions();
+ratingRules = loadRatingRules();
+renderRules();
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });

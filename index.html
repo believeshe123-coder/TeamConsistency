@@ -28,8 +28,13 @@
             </label>
 
             <label>
-              Score (1-10)
-              <input id="score" name="score" type="number" min="1" max="10" step="0.1" value="5" required />
+              Predefined category rules
+              <select id="rating-rule-select" aria-label="Select predefined rating rule"></select>
+            </label>
+
+            <label>
+              Score (-10 to 10)
+              <input id="score" name="score" type="number" min="-10" max="10" step="0.1" value="5" required />
             </label>
 
             <label>
@@ -39,8 +44,7 @@
           </div>
 
           <p class="score-guidance" role="note">
-            Scoring guide: 1 = unacceptable performance, 5 = baseline (just did the job), 10 = exceptional performance.
-            Use the full 1-10 range for consistent reviews.
+            Scoring guide: use negative values for penalties (e.g., -3 for "Was late"), 0 for neutral, and up to 10 for exceptional performance.
           </p>
 
           <label>
@@ -48,12 +52,39 @@
             <textarea id="note" name="note" rows="4" placeholder="Great pace on loading dock, needs help with labeling accuracy."></textarea>
           </label>
 
-          <button type="submit">Save Rating</button>
+          <div class="form-actions">
+            <button type="submit">Save Rating</button>
+            <button type="button" id="apply-rating-rule" class="secondary">Add Selected Category Rating</button>
+          </div>
         </form>
       </section>
 
-
-
+      <section class="card">
+        <h2>Rating Rules</h2>
+        <p class="hint">Define reusable conditions and category scores. Example: condition "Full-time", category "Was late", score "-3".</p>
+        <form id="rating-rules-form">
+          <div class="field-grid">
+            <label>
+              Condition
+              <input id="ruleCondition" name="ruleCondition" type="text" placeholder="Full-time" />
+            </label>
+            <label>
+              Rating category
+              <input id="ruleCategory" name="ruleCategory" type="text" required placeholder="Was late" />
+            </label>
+            <label>
+              Predefined score
+              <input id="ruleScore" name="ruleScore" type="number" min="-10" max="10" step="0.1" value="0" required />
+            </label>
+          </div>
+          <label>
+            Default note (optional)
+            <input id="ruleNote" name="ruleNote" type="text" placeholder="No-call no-show" />
+          </label>
+          <button type="submit">Save Rule</button>
+        </form>
+        <ul id="rating-rules-list" class="profiles"></ul>
+      </section>
       <section id="add-profile-panel" class="card hidden" aria-label="Add worker profile panel">
         <h2>Add Worker Profile</h2>
         <form id="add-profile-form">
