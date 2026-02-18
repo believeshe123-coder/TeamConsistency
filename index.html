@@ -52,8 +52,6 @@
         </form>
       </section>
 
-
-
       <section id="add-profile-panel" class="card hidden" aria-label="Add worker profile panel">
         <h2>Add Worker Profile</h2>
         <form id="add-profile-form">
@@ -65,7 +63,12 @@
 
             <label>
               Status
-              <input id="profileStatus" name="status" type="text" required placeholder="Active, Onboarding, etc." />
+              <select id="profileStatus" name="status" required>
+                <option value="">Select status</option>
+                <option value="Full-time">Full-time</option>
+                <option value="Part-time">Part-time</option>
+                <option value="New">New</option>
+              </select>
             </label>
           </div>
 
@@ -73,6 +76,13 @@
             Background info
             <textarea id="profileBackground" name="background" rows="4" placeholder="Experience, certifications, shift preferences, or other context."></textarea>
           </label>
+
+          <fieldset class="history-fieldset">
+            <legend>Worker history</legend>
+            <p class="hint">Add one or more category + score entries to save with this profile.</p>
+            <div id="profile-history-list" class="history-list"></div>
+            <button type="button" id="add-history-entry" class="secondary">Add history entry</button>
+          </fieldset>
 
           <div class="form-actions">
             <button type="submit">Save Profile</button>
