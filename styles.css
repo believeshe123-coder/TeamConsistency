@@ -17,6 +17,8 @@ body {
 
 h1,
 h2,
+h3,
+h4,
 p {
   margin-top: 0;
 }
@@ -43,6 +45,7 @@ label {
 
 input,
 textarea,
+select,
 button {
   font: inherit;
   padding: 0.55rem 0.7rem;
@@ -97,6 +100,39 @@ button.secondary {
   font-size: 0.85rem;
 }
 
+.profile-detail {
+  margin-top: 1rem;
+}
+
+.profile-detail-header {
+  margin-bottom: 0.75rem;
+}
+
+.category-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.75rem;
+}
+
+.category-history {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.category-history ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.trend {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
 .badge {
   display: inline-block;
   padding: 0.2rem 0.5rem;
@@ -105,6 +141,17 @@ button.secondary {
   font-weight: 600;
 }
 
-.top-performer { background: #dcfce7; color: #166534; }
-.steady { background: #dbeafe; color: #1d4ed8; }
-.at-risk { background: #fee2e2; color: #991b1b; }
+.top-performer {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.steady {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.at-risk {
+  background: #fee2e2;
+  color: #991b1b;
+}
