@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'worker_profiles_v1';
+const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
 
 const form = document.getElementById('rating-form');
@@ -8,68 +8,38 @@ const categorySelect = document.getElementById('category');
 const workerSelector = document.getElementById('worker-selector');
 const workerProfileDetail = document.getElementById('worker-profile-detail');
 
+let profilesCache = [];
+
 const statusFromScore = (score) => {
   if (score >= 4.2) return 'top-performer';
   if (score <= 2.5) return 'at-risk';
   return 'steady';
 };
 
-const sanitizeRating = (rawRating) => ({
-  category: rawRating.category,
-  score: Number(rawRating.score),
-  reviewer: rawRating.reviewer,
-  note: rawRating.note ?? '',
-  ratedAt: rawRating.ratedAt,
-});
-
-const normalizeProfile = (profile) => {
-  const ratings = Array.isArray(profile.ratings) ? profile.ratings.map(sanitizeRating) : [];
-
-  const categoryHistory = RATING_CATEGORIES.reduce((history, category) => {
-    const legacyEntries = Array.isArray(profile.categoryHistory?.[category])
-      ? profile.categoryHistory[category].map(sanitizeRating)
-      : [];
-    const fallbackEntries = ratings.filter((rating) => rating.category === category);
-
-    history[category] = [...legacyEntries, ...fallbackEntries].sort(
-      (a, b) => new Date(a.ratedAt).getTime() - new Date(b.ratedAt).getTime(),
-    );
-    return history;
-  }, {});
-
-  const strengths = Array.isArray(profile.strengths) ? profile.strengths : [];
-  const weaknesses = Array.isArray(profile.weaknesses) ? profile.weaknesses : [];
-  const jobCategories = Array.isArray(profile.jobCategories)
-    ? profile.jobCategories.filter((category) => RATING_CATEGORIES.includes(category))
-    : [];
-
-  const total = ratings.reduce((sum, entry) => sum + Number(entry.score), 0);
-  const overallScore = ratings.length ? Number((total / ratings.length).toFixed(2)) : 0;
-
-  return {
-    ...profile,
-    ratings,
-    categoryHistory,
-    strengths,
-    weaknesses,
-    jobCategories: Array.from(new Set(jobCategories)),
-    overallScore,
-    overallStatus: statusFromScore(overallScore),
-  };
+const fetchProfiles = async () => {
+  const response = await fetch(`${API_BASE}/profiles`);
+  if (!response.ok) throw new Error('Unable to load profiles');
+  return response.json();
 };
 
-const loadProfiles = () => {
-  try {
-    const parsedProfiles = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (!Array.isArray(parsedProfiles)) return [];
-    return parsedProfiles.map(normalizeProfile);
-  } catch {
-    return [];
+const saveRating = async (rating) => {
+  const response = await fetch(`${API_BASE}/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rating),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || 'Unable to save rating');
   }
+
+  return response.json();
 };
 
-const saveProfiles = (profiles) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+const clearProfiles = async () => {
+  const response = await fetch(`${API_BASE}/profiles`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Unable to clear profiles');
 };
 
 const buildTrendText = (history) => {
@@ -84,49 +54,13 @@ const buildTrendText = (history) => {
   return 'Stable (0.00)';
 };
 
-const upsertProfile = (profiles, rating) => {
-  const existing = profiles.find((profile) => profile.name.toLowerCase() === rating.workerName.toLowerCase());
-
-  if (!existing) {
-    const categoryHistory = RATING_CATEGORIES.reduce((history, category) => {
-      history[category] = category === rating.category ? [rating] : [];
-      return history;
-    }, {});
-
-    profiles.push({
-      name: rating.workerName,
-      jobCategories: [rating.category],
-      ratings: [rating],
-      categoryHistory,
-      strengths: rating.note ? [rating.note] : [],
-      weaknesses: [],
-      overallScore: rating.score,
-      overallStatus: statusFromScore(rating.score),
-    });
-    return profiles;
-  }
-
-  existing.ratings.push(rating);
-  if (!existing.jobCategories.includes(rating.category)) existing.jobCategories.push(rating.category);
-
-  if (!existing.categoryHistory) {
-    existing.categoryHistory = RATING_CATEGORIES.reduce((history, category) => {
-      history[category] = [];
-      return history;
-    }, {});
-  }
-
-  existing.categoryHistory[rating.category] = [...(existing.categoryHistory[rating.category] ?? []), rating].sort(
-    (a, b) => new Date(a.ratedAt).getTime() - new Date(b.ratedAt).getTime(),
-  );
-
-  if (rating.note) existing.strengths.push(rating.note);
-
-  const total = existing.ratings.reduce((sum, entry) => sum + Number(entry.score), 0);
-  existing.overallScore = Number((total / existing.ratings.length).toFixed(2));
-  existing.overallStatus = statusFromScore(existing.overallScore);
-
-  return profiles;
+const buildCategoryHistory = (ratings) => {
+  return RATING_CATEGORIES.reduce((history, category) => {
+    history[category] = ratings
+      .filter((rating) => rating.category === category)
+      .sort((a, b) => new Date(a.ratedAt).getTime() - new Date(b.ratedAt).getTime());
+    return history;
+  }, {});
 };
 
 const renderProfiles = (profiles) => {
@@ -147,7 +81,7 @@ const renderProfiles = (profiles) => {
         <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
         <span>Ratings: ${profile.ratings.length}</span>
         <span>Avg score: ${profile.overallScore}</span>
-        <span class="badge ${profile.overallStatus}">${profile.overallStatus}</span>
+        <span class="badge ${statusFromScore(profile.overallScore)}">${statusFromScore(profile.overallScore)}</span>
       </div>
     `;
     profilesList.appendChild(item);
@@ -160,26 +94,28 @@ const renderWorkerSelector = (profiles) => {
   const sorted = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
   sorted.forEach((profile) => {
     const option = document.createElement('option');
-    option.value = profile.name;
+    option.value = String(profile.id);
     option.textContent = profile.name;
     workerSelector.appendChild(option);
   });
 };
 
-const renderWorkerProfile = (profiles, workerName) => {
-  if (!workerName) {
+const renderWorkerProfile = (profiles, workerId) => {
+  if (!workerId) {
     workerProfileDetail.innerHTML = '<p class="hint">Choose a worker to inspect category-level rating history and trends.</p>';
     return;
   }
 
-  const profile = profiles.find((entry) => entry.name === workerName);
+  const profile = profiles.find((entry) => String(entry.id) === String(workerId));
   if (!profile) {
     workerProfileDetail.innerHTML = '<p class="hint">Worker profile not found.</p>';
     return;
   }
 
+  const categoryHistory = buildCategoryHistory(profile.ratings);
+
   const categorySections = RATING_CATEGORIES.map((category) => {
-    const history = profile.categoryHistory?.[category] ?? [];
+    const history = categoryHistory[category] ?? [];
     const trend = buildTrendText(history);
 
     const rows = history.length
@@ -207,7 +143,7 @@ const renderWorkerProfile = (profiles, workerName) => {
       <div class="meta">
         <span>Total ratings: ${profile.ratings.length}</span>
         <span>Overall avg: ${profile.overallScore}</span>
-        <span class="badge ${profile.overallStatus}">${profile.overallStatus}</span>
+        <span class="badge ${statusFromScore(profile.overallScore)}">${statusFromScore(profile.overallScore)}</span>
       </div>
     </div>
     <div class="category-history-grid">${categorySections}</div>
@@ -231,7 +167,12 @@ const initializeCategoryOptions = () => {
   });
 };
 
-form.addEventListener('submit', (event) => {
+const refreshFromBackend = async () => {
+  profilesCache = await fetchProfiles();
+  renderAll(profilesCache);
+};
+
+form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const data = new FormData(form);
@@ -244,25 +185,36 @@ form.addEventListener('submit', (event) => {
     ratedAt: new Date().toISOString(),
   };
 
-  const profiles = upsertProfile(loadProfiles(), rating);
-  saveProfiles(profiles);
-  renderAll(profiles);
-  workerSelector.value = rating.workerName;
-  renderWorkerProfile(profiles, rating.workerName);
-  form.reset();
-  document.getElementById('score').value = '3';
-  categorySelect.value = RATING_CATEGORIES[0];
+  try {
+    const savedProfile = await saveRating(rating);
+    await refreshFromBackend();
+    workerSelector.value = String(savedProfile.id);
+    renderWorkerProfile(profilesCache, savedProfile.id);
+    form.reset();
+    document.getElementById('score').value = '3';
+    categorySelect.value = RATING_CATEGORIES[0];
+  } catch (error) {
+    // eslint-disable-next-line no-alert
+    alert(error.message);
+  }
 });
 
 workerSelector.addEventListener('change', () => {
-  renderWorkerProfile(loadProfiles(), workerSelector.value);
+  renderWorkerProfile(profilesCache, workerSelector.value);
 });
 
-clearButton.addEventListener('click', () => {
-  localStorage.removeItem(STORAGE_KEY);
-  workerSelector.value = '';
-  renderAll([]);
+clearButton.addEventListener('click', async () => {
+  try {
+    await clearProfiles();
+    workerSelector.value = '';
+    await refreshFromBackend();
+  } catch (error) {
+    // eslint-disable-next-line no-alert
+    alert(error.message);
+  }
 });
 
 initializeCategoryOptions();
-renderAll(loadProfiles());
+refreshFromBackend().catch((error) => {
+  workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
+});
