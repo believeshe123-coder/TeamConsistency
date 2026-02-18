@@ -72,6 +72,34 @@ button.secondary {
   gap: 1rem;
 }
 
+
+
+.section-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.hidden {
+  display: none;
+}
+
+.section-actions button,
+.form-actions button {
+  margin-top: 0;
+}
+
+.score-guidance {
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
 .hint {
   color: #4b5563;
   font-size: 0.9rem;
