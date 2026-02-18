@@ -10,7 +10,7 @@
     <main class="container">
       <header>
         <h1>Worker Rating Intake</h1>
-        <p>Capture performance notes and build a running profile for each worker.</p>
+        <p>Capture standardized performance ratings and maintain long-term worker profiles.</p>
       </header>
 
       <section class="card">
@@ -23,8 +23,8 @@
             </label>
 
             <label>
-              Job category
-              <input id="category" name="category" type="text" required placeholder="Warehouse" />
+              Category
+              <select id="category" name="category" required></select>
             </label>
 
             <label>
@@ -54,6 +54,17 @@
         </div>
         <p class="hint">Profiles are stored in your browser for quick demo/testing.</p>
         <ul id="profiles" class="profiles"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Retrieve Worker Profile</h2>
+        <label>
+          Worker
+          <select id="worker-selector" aria-label="Select worker profile"></select>
+        </label>
+        <div id="worker-profile-detail" class="profile-detail">
+          <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
+        </div>
       </section>
     </main>
 
