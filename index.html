@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Worker Ratings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Worker Rating Intake</h1>
+        <p>Capture performance notes and build a running profile for each worker.</p>
+      </header>
+
+      <section class="card">
+        <h2>Add Rating</h2>
+        <form id="rating-form">
+          <div class="field-grid">
+            <label>
+              Worker name
+              <input id="workerName" name="workerName" type="text" required minlength="2" placeholder="Jordan Patel" />
+            </label>
+
+            <label>
+              Job category
+              <input id="category" name="category" type="text" required placeholder="Warehouse" />
+            </label>
+
+            <label>
+              Score (1-5)
+              <input id="score" name="score" type="number" min="1" max="5" step="0.1" value="3" required />
+            </label>
+
+            <label>
+              Reviewer
+              <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" />
+            </label>
+          </div>
+
+          <label>
+            Notes (strengths / weaknesses)
+            <textarea id="note" name="note" rows="4" placeholder="Great pace on loading dock, needs help with labeling accuracy."></textarea>
+          </label>
+
+          <button type="submit">Save Rating</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="section-header">
+          <h2>Worker Profiles</h2>
+          <button type="button" id="clear-data" class="secondary">Clear all</button>
+        </div>
+        <p class="hint">Profiles are stored in your browser for quick demo/testing.</p>
+        <ul id="profiles" class="profiles"></ul>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
