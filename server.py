@@ -34,7 +34,9 @@ def initialize_database() -> None:
                 notes TEXT,
                 rated_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                profile_status TEXT,
+                background_info TEXT
             )
             '''
         )
@@ -55,6 +57,18 @@ def initialize_database() -> None:
             '''
         )
 
+        ensure_profile_columns(connection)
+
+
+def ensure_profile_columns(connection: sqlite3.Connection) -> None:
+    columns = {row['name'] for row in connection.execute('PRAGMA table_info(worker_profiles)').fetchall()}
+
+    if 'profile_status' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN profile_status TEXT')
+
+    if 'background_info' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN background_info TEXT')
+
 
 def validate_rating_payload(payload: dict, require_worker_name: bool = False) -> str | None:
     if require_worker_name:
@@ -72,10 +86,22 @@ def validate_rating_payload(payload: dict, require_worker_name: bool = False) ->
 
     if not category:
         return 'Missing required field: category'
-    if score is None or score < 1 or score > 5:
-        return 'score must be a number between 1 and 5'
+    if score is None or score < 1 or score > 10:
+        return 'score must be a number between 1 and 10'
     if not reviewer:
         return 'Missing required field: reviewer'
+
+    return None
+
+
+def validate_profile_payload(payload: dict) -> str | None:
+    name = str(payload.get('name', payload.get('workerName', ''))).strip()
+    status = str(payload.get('status', '')).strip()
+
+    if len(name) < 2:
+        return 'name is required and must be at least 2 characters'
+    if not status:
+        return 'Missing required field: status'
 
     return None
 
@@ -109,6 +135,8 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
         'ratedAt': profile_row['rated_at'],
         'createdAt': profile_row['created_at'],
         'updatedAt': profile_row['updated_at'],
+        'profileStatus': profile_row['profile_status'],
+        'backgroundInfo': profile_row['background_info'],
         'ratings': ratings,
         'jobCategories': categories,
         'overallScore': overall_score,
@@ -168,6 +196,51 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        if path == '/api/profiles/create':
+            payload = self._read_json_body()
+            validation_error = validate_profile_payload(payload)
+            if validation_error:
+                self._send_json(400, {'message': validation_error})
+                return
+
+            worker_name = str(payload.get('name', payload.get('workerName'))).strip()
+            profile_status = str(payload.get('status')).strip()
+            background_info = str(payload.get('background', payload.get('backgroundInfo', ''))).strip()
+
+            with db_connection() as connection:
+                existing = connection.execute(
+                    'SELECT * FROM worker_profiles WHERE lower(name) = lower(?)',
+                    (worker_name,),
+                ).fetchone()
+
+                if existing is None:
+                    cursor = connection.execute(
+                        '''
+                        INSERT INTO worker_profiles (name, profile_status, background_info)
+                        VALUES (?, ?, ?)
+                        ''',
+                        (worker_name, profile_status, background_info),
+                    )
+                    worker_id = int(cursor.lastrowid)
+                    status = 201
+                else:
+                    worker_id = int(existing['id'])
+                    connection.execute(
+                        '''
+                        UPDATE worker_profiles
+                        SET profile_status = ?, background_info = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        ''',
+                        (profile_status, background_info, worker_id),
+                    )
+                    status = 200
+
+                row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
+                profile = build_profile(connection, row)
+
+            self._send_json(status, profile)
+            return
 
         if path == '/api/profiles':
             payload = self._read_json_body()
@@ -299,6 +372,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             category = str(payload.get('category', existing['job_category'] or '')).strip()
             reviewer = str(payload.get('reviewer', existing['reviewer'] or '')).strip()
             note = str(payload.get('note', payload.get('notes', existing['notes'] or ''))).strip()
+            profile_status = str(payload.get('status', existing['profile_status'] or '')).strip()
+            background_info = str(payload.get('background', payload.get('backgroundInfo', existing['background_info'] or ''))).strip()
             rated_at = payload.get('ratedAt') or existing['rated_at'] or now_iso()
 
             try:
@@ -310,17 +385,17 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 self._send_json(400, {'message': 'name must be at least 2 characters'})
                 return
 
-            if score is None or score < 1 or score > 5:
-                self._send_json(400, {'message': 'score must be a number between 1 and 5'})
+            if score is None or score < 1 or score > 10:
+                self._send_json(400, {'message': 'score must be a number between 1 and 10'})
                 return
 
             connection.execute(
                 '''
                 UPDATE worker_profiles
-                SET name = ?, job_category = ?, score = ?, reviewer = ?, notes = ?, rated_at = ?, updated_at = CURRENT_TIMESTAMP
+                SET name = ?, job_category = ?, score = ?, reviewer = ?, notes = ?, rated_at = ?, profile_status = ?, background_info = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 ''',
-                (name, category, score, reviewer, note, rated_at, int(profile_id)),
+                (name, category, score, reviewer, note, rated_at, profile_status, background_info, int(profile_id)),
             )
 
             if payload.get('logRating') is True:

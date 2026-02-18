@@ -2,6 +2,10 @@ const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
 
 const form = document.getElementById('rating-form');
+const addProfileForm = document.getElementById('add-profile-form');
+const addProfileButton = document.getElementById('add-profile');
+const cancelAddProfileButton = document.getElementById('cancel-add-profile');
+const addProfilePanel = document.getElementById('add-profile-panel');
 const profilesList = document.getElementById('profiles');
 const clearButton = document.getElementById('clear-data');
 const categorySelect = document.getElementById('category');
@@ -11,8 +15,8 @@ const workerProfileDetail = document.getElementById('worker-profile-detail');
 let profilesCache = [];
 
 const statusFromScore = (score) => {
-  if (score >= 4.2) return 'top-performer';
-  if (score <= 2.5) return 'at-risk';
+  if (score >= 8.4) return 'top-performer';
+  if (score <= 5) return 'at-risk';
   return 'steady';
 };
 
@@ -32,6 +36,21 @@ const saveRating = async (rating) => {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.message || 'Unable to save rating');
+  }
+
+  return response.json();
+};
+
+const addProfile = async (profile) => {
+  const response = await fetch(`${API_BASE}/profiles/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || 'Unable to create profile');
   }
 
   return response.json();
@@ -68,21 +87,25 @@ const renderProfiles = (profiles) => {
 
   const sorted = [...profiles].sort((a, b) => b.overallScore - a.overallScore);
   if (sorted.length === 0) {
-    profilesList.innerHTML = '<li class="profile-item">No workers yet. Add a rating to start building profiles.</li>';
+    profilesList.innerHTML = '<li class="profile-item">No workers yet. Add a profile or rating to start building profiles.</li>';
     return;
   }
 
   sorted.forEach((profile) => {
     const item = document.createElement('li');
     item.className = 'profile-item';
+    const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
+    const badgeLabel = profile.ratings.length ? badgeClass : 'unrated';
     item.innerHTML = `
       <strong>${profile.name}</strong>
       <div class="meta">
+        <span>Status: ${profile.profileStatus || '—'}</span>
         <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
         <span>Ratings: ${profile.ratings.length}</span>
         <span>Avg score: ${profile.overallScore}</span>
-        <span class="badge ${statusFromScore(profile.overallScore)}">${statusFromScore(profile.overallScore)}</span>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
+      ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
     `;
     profilesList.appendChild(item);
   });
@@ -137,14 +160,18 @@ const renderWorkerProfile = (profiles, workerId) => {
     `;
   }).join('');
 
+  const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
+  const badgeLabel = profile.ratings.length ? badgeClass : 'unrated';
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
       <div class="meta">
+        <span>Status: ${profile.profileStatus || '—'}</span>
         <span>Total ratings: ${profile.ratings.length}</span>
         <span>Overall avg: ${profile.overallScore}</span>
-        <span class="badge ${statusFromScore(profile.overallScore)}">${statusFromScore(profile.overallScore)}</span>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
+      ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
     </div>
     <div class="category-history-grid">${categorySections}</div>
   `;
@@ -172,6 +199,13 @@ const refreshFromBackend = async () => {
   renderAll(profilesCache);
 };
 
+const toggleAddProfilePanel = (show) => {
+  addProfilePanel.classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('profileName').focus();
+  }
+};
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
@@ -191,8 +225,41 @@ form.addEventListener('submit', async (event) => {
     workerSelector.value = String(savedProfile.id);
     renderWorkerProfile(profilesCache, savedProfile.id);
     form.reset();
-    document.getElementById('score').value = '3';
+    document.getElementById('score').value = '5';
     categorySelect.value = RATING_CATEGORIES[0];
+  } catch (error) {
+    // eslint-disable-next-line no-alert
+    alert(error.message);
+  }
+});
+
+addProfileButton.addEventListener('click', () => {
+  toggleAddProfilePanel(true);
+});
+
+cancelAddProfileButton.addEventListener('click', () => {
+  addProfileForm.reset();
+  toggleAddProfilePanel(false);
+});
+
+addProfileForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  const data = new FormData(addProfileForm);
+  const profilePayload = {
+    name: data.get('name').toString().trim(),
+    status: data.get('status').toString().trim(),
+    background: data.get('background').toString().trim(),
+  };
+
+  try {
+    const savedProfile = await addProfile(profilePayload);
+    await refreshFromBackend();
+    workerSelector.value = String(savedProfile.id);
+    renderWorkerProfile(profilesCache, savedProfile.id);
+    document.getElementById('workerName').value = savedProfile.name;
+    addProfileForm.reset();
+    toggleAddProfilePanel(false);
   } catch (error) {
     // eslint-disable-next-line no-alert
     alert(error.message);

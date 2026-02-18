@@ -15,7 +15,7 @@ interface RatingInputFormProps {
   onSubmit: (payload: RatingInputPayload) => void;
 }
 
-const DEFAULT_SCORE = 3;
+const DEFAULT_SCORE = 5;
 
 export function RatingInputForm({ categories, reviewers, onSubmit }: RatingInputFormProps) {
   const [workerName, setWorkerName] = useState('');
@@ -77,18 +77,23 @@ export function RatingInputForm({ categories, reviewers, onSubmit }: RatingInput
       </div>
 
       <div>
-        <label htmlFor="score">Score (1-5)</label>
+        <label htmlFor="score">Score (1-10)</label>
         <input
           id="score"
           type="number"
           min={1}
-          max={5}
+          max={10}
           step={0.1}
           value={score}
           onChange={(event) => setScore(Number(event.target.value))}
           required
         />
       </div>
+
+      <p className="score-guidance" role="note">
+        Scoring guide: 1 = unacceptable performance, 5 = baseline (just did the job), 10 = exceptional
+        performance. Use the full 1-10 range for consistent reviews.
+      </p>
 
       <div>
         <label htmlFor="reviewer">Reviewer</label>

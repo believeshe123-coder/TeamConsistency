@@ -28,8 +28,8 @@
             </label>
 
             <label>
-              Score (1-5)
-              <input id="score" name="score" type="number" min="1" max="5" step="0.1" value="3" required />
+              Score (1-10)
+              <input id="score" name="score" type="number" min="1" max="10" step="0.1" value="5" required />
             </label>
 
             <label>
@@ -37,6 +37,11 @@
               <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" />
             </label>
           </div>
+
+          <p class="score-guidance" role="note">
+            Scoring guide: 1 = unacceptable performance, 5 = baseline (just did the job), 10 = exceptional performance.
+            Use the full 1-10 range for consistent reviews.
+          </p>
 
           <label>
             Notes (strengths / weaknesses)
@@ -47,10 +52,41 @@
         </form>
       </section>
 
+
+
+      <section id="add-profile-panel" class="card hidden" aria-label="Add worker profile panel">
+        <h2>Add Worker Profile</h2>
+        <form id="add-profile-form">
+          <div class="field-grid">
+            <label>
+              Worker name
+              <input id="profileName" name="name" type="text" required minlength="2" placeholder="Jordan Patel" />
+            </label>
+
+            <label>
+              Status
+              <input id="profileStatus" name="status" type="text" required placeholder="Active, Onboarding, etc." />
+            </label>
+          </div>
+
+          <label>
+            Background info
+            <textarea id="profileBackground" name="background" rows="4" placeholder="Experience, certifications, shift preferences, or other context."></textarea>
+          </label>
+
+          <div class="form-actions">
+            <button type="submit">Save Profile</button>
+            <button type="button" id="cancel-add-profile" class="secondary">Cancel</button>
+          </div>
+        </form>
+      </section>
       <section class="card">
         <div class="section-header">
           <h2>Worker Profiles</h2>
-          <button type="button" id="clear-data" class="secondary">Clear all</button>
+          <div class="section-actions">
+            <button type="button" id="add-profile" class="secondary">Add Profile</button>
+            <button type="button" id="clear-data" class="secondary">Clear all</button>
+          </div>
         </div>
         <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
         <ul id="profiles" class="profiles"></ul>
