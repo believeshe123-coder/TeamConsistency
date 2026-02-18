@@ -1,12 +1,14 @@
 const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
-const RATING_RULES_KEY = 'worker-rating-rules-v1';
+const PROFILE_STATUSES = ['Full-time', 'Part-time', 'New'];
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
 const addProfileButton = document.getElementById('add-profile');
 const cancelAddProfileButton = document.getElementById('cancel-add-profile');
 const addProfilePanel = document.getElementById('add-profile-panel');
+const addHistoryEntryButton = document.getElementById('add-history-entry');
+const profileHistoryList = document.getElementById('profile-history-list');
 const profilesList = document.getElementById('profiles');
 const clearButton = document.getElementById('clear-data');
 const categorySelect = document.getElementById('category');
@@ -115,6 +117,18 @@ const buildCategoryHistory = (ratings) => {
   }, {});
 };
 
+const renderHistorySummary = (historyEntries) => {
+  if (!historyEntries?.length) {
+    return '<p class="hint">No profile history entries saved yet.</p>';
+  }
+
+  const rows = historyEntries
+    .map((entry) => `<li><label><input type="checkbox" checked disabled /> ${entry.category}: ${entry.score}</label></li>`)
+    .join('');
+
+  return `<ul class="history-summary">${rows}</ul>`;
+};
+
 const renderProfiles = (profiles) => {
   profilesList.innerHTML = '';
 
@@ -139,6 +153,10 @@ const renderProfiles = (profiles) => {
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
       ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
+      <div>
+        <h4>Profile history summary</h4>
+        ${renderHistorySummary(profile.historyEntries)}
+      </div>
     `;
     profilesList.appendChild(item);
   });
@@ -206,6 +224,10 @@ const renderWorkerProfile = (profiles, workerId) => {
       </div>
       ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
     </div>
+    <article class="category-history">
+      <h4>Saved profile history checklist</h4>
+      ${renderHistorySummary(profile.historyEntries)}
+    </article>
     <div class="category-history-grid">${categorySections}</div>
   `;
 };
@@ -274,6 +296,65 @@ const renderRules = () => {
 
   renderRuleSelect();
   initializeCategoryOptions();
+};
+
+const buildHistoryEntryRow = (entry = {}) => {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'history-entry';
+
+  const selectedCategory = RATING_CATEGORIES.includes(entry.category) ? entry.category : RATING_CATEGORIES[0];
+  const selectedScore = Number.isFinite(entry.score) ? entry.score : 5;
+
+  wrapper.innerHTML = `
+    <label>
+      Category
+      <select name="historyCategory" required>
+        ${RATING_CATEGORIES.map((category) => `<option value="${category}" ${selectedCategory === category ? 'selected' : ''}>${category}</option>`).join('')}
+      </select>
+    </label>
+    <label>
+      Score (1-10)
+      <input name="historyScore" type="number" min="1" max="10" step="0.1" value="${selectedScore}" required />
+    </label>
+    <button type="button" class="secondary remove-history-entry">Remove</button>
+  `;
+
+  wrapper.querySelector('.remove-history-entry').addEventListener('click', () => {
+    wrapper.remove();
+  });
+
+  return wrapper;
+};
+
+const resetHistoryEntries = (entries = []) => {
+  profileHistoryList.innerHTML = '';
+  const sourceEntries = entries.length ? entries : [{}];
+  sourceEntries.forEach((entry) => {
+    profileHistoryList.appendChild(buildHistoryEntryRow(entry));
+  });
+};
+
+const initializeStatusOptions = () => {
+  const profileStatus = document.getElementById('profileStatus');
+  const existing = Array.from(profileStatus.options).map((option) => option.value);
+
+  PROFILE_STATUSES.forEach((status) => {
+    if (existing.includes(status)) return;
+    const option = document.createElement('option');
+    option.value = status;
+    option.textContent = status;
+    profileStatus.appendChild(option);
+  });
+};
+
+const collectHistoryEntries = () => {
+  return Array.from(profileHistoryList.querySelectorAll('.history-entry'))
+    .map((row) => {
+      const category = row.querySelector('select[name="historyCategory"]').value.trim();
+      const score = Number(row.querySelector('input[name="historyScore"]').value);
+      return { category, score };
+    })
+    .filter((entry) => entry.category && Number.isFinite(entry.score));
 };
 
 const refreshFromBackend = async () => {
@@ -415,8 +496,13 @@ addProfileButton.addEventListener('click', () => {
   toggleAddProfilePanel(true);
 });
 
+addHistoryEntryButton.addEventListener('click', () => {
+  profileHistoryList.appendChild(buildHistoryEntryRow());
+});
+
 cancelAddProfileButton.addEventListener('click', () => {
   addProfileForm.reset();
+  resetHistoryEntries();
   toggleAddProfilePanel(false);
 });
 
@@ -428,6 +514,7 @@ addProfileForm.addEventListener('submit', async (event) => {
     name: data.get('name').toString().trim(),
     status: data.get('status').toString().trim(),
     background: data.get('background').toString().trim(),
+    historyEntries: collectHistoryEntries(),
   };
 
   try {
@@ -437,6 +524,7 @@ addProfileForm.addEventListener('submit', async (event) => {
     renderWorkerProfile(profilesCache, savedProfile.id);
     document.getElementById('workerName').value = savedProfile.name;
     addProfileForm.reset();
+    resetHistoryEntries();
     toggleAddProfilePanel(false);
   } catch (error) {
     // eslint-disable-next-line no-alert
@@ -459,8 +547,9 @@ clearButton.addEventListener('click', async () => {
   }
 });
 
-ratingRules = loadRatingRules();
-renderRules();
+initializeCategoryOptions();
+initializeStatusOptions();
+resetHistoryEntries();
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });

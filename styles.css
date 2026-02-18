@@ -72,8 +72,6 @@ button.secondary {
   gap: 1rem;
 }
 
-
-
 .section-actions {
   display: flex;
   gap: 0.5rem;
@@ -136,10 +134,49 @@ button.secondary {
   margin-bottom: 0.75rem;
 }
 
+.history-fieldset {
+  margin-top: 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.history-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.history-entry {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.history-entry .remove-history-entry {
+  height: fit-content;
+}
+
+.history-summary {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.history-summary label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .category-history-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 .category-history {
