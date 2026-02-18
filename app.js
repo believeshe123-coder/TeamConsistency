@@ -1,14 +1,16 @@
 const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
 const PROFILE_STATUSES = ['Full-time', 'Part-time', 'New'];
+const RATING_RULES_KEY = 'worker-rating-rules-v1';
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
 const addProfileButton = document.getElementById('add-profile');
 const cancelAddProfileButton = document.getElementById('cancel-add-profile');
-const addProfilePanel = document.getElementById('add-profile-panel');
 const addHistoryEntryButton = document.getElementById('add-history-entry');
+const addNoteEntryButton = document.getElementById('add-note-entry');
 const profileHistoryList = document.getElementById('profile-history-list');
+const profileNotesList = document.getElementById('profile-notes-list');
 const profilesList = document.getElementById('profiles');
 const clearButton = document.getElementById('clear-data');
 const categorySelect = document.getElementById('category');
@@ -18,9 +20,14 @@ const rulesForm = document.getElementById('rating-rules-form');
 const rulesList = document.getElementById('rating-rules-list');
 const ruleSelect = document.getElementById('rating-rule-select');
 const applyRuleButton = document.getElementById('apply-rating-rule');
+const mainPage = document.getElementById('main-page');
+const profilePage = document.getElementById('profile-page');
 
 let profilesCache = [];
 let ratingRules = [];
+
+const formatTimestamp = (value) => new Date(value).toLocaleString();
+const nowIso = () => new Date().toISOString();
 
 const statusFromScore = (score) => {
   if (score >= 8.4) return 'top-performer';
@@ -124,13 +131,28 @@ const buildCategoryHistory = (ratings) => {
   }, {});
 };
 
+const renderProfileNotesTimeline = (profileNotes) => {
+  if (!profileNotes?.length) {
+    return '<p class="hint">No timed profile notes saved yet.</p>';
+  }
+
+  const rows = profileNotes
+    .map((entry) => `<li><strong>${formatTimestamp(entry.createdAt)}:</strong> ${entry.note}</li>`)
+    .join('');
+
+  return `<ul class="history-summary">${rows}</ul>`;
+};
+
 const renderHistorySummary = (historyEntries) => {
   if (!historyEntries?.length) {
     return '<p class="hint">No profile history entries saved yet.</p>';
   }
 
   const rows = historyEntries
-    .map((entry) => `<li><label><input type="checkbox" checked disabled /> ${entry.category}: ${entry.score}</label></li>`)
+    .map((entry) => {
+      const detail = entry.note ? ` — ${entry.note}` : '';
+      return `<li><label><input type="checkbox" checked disabled /> ${entry.category}: ${entry.score}${detail} <span class="hint">(${formatTimestamp(entry.createdAt)})</span></label></li>`;
+    })
     .join('');
 
   return `<ul class="history-summary">${rows}</ul>`;
@@ -150,6 +172,8 @@ const renderProfiles = (profiles) => {
     item.className = 'profile-item';
     const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
     const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+    const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
+
     item.innerHTML = `
       <strong>${profile.name}</strong>
       <div class="meta">
@@ -160,6 +184,7 @@ const renderProfiles = (profiles) => {
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
       ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
+      ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
       <div>
         <h4>Profile history summary</h4>
         ${renderHistorySummary(profile.historyEntries)}
@@ -202,7 +227,7 @@ const renderWorkerProfile = (profiles, workerId) => {
     const rows = history.length
       ? history
           .map((entry) => {
-            const formattedDate = new Date(entry.ratedAt).toLocaleDateString();
+            const formattedDate = new Date(entry.ratedAt).toLocaleString();
             const note = entry.note ? ` — ${entry.note}` : '';
             return `<li>${formattedDate}: ${entry.score} by ${entry.reviewer}${note}</li>`;
           })
@@ -235,6 +260,10 @@ const renderWorkerProfile = (profiles, workerId) => {
       <h4>Saved profile history checklist</h4>
       ${renderHistorySummary(profile.historyEntries)}
     </article>
+    <article class="category-history">
+      <h4>Timed profile notes</h4>
+      ${renderProfileNotesTimeline(profile.profileNotes)}
+    </article>
     <div class="category-history-grid">${categorySections}</div>
   `;
 };
@@ -262,6 +291,8 @@ const initializeCategoryOptions = () => {
 };
 
 const renderRuleSelect = () => {
+  if (!ruleSelect) return;
+
   const previous = ruleSelect.value;
   ruleSelect.innerHTML = '<option value="">No predefined category selected</option>';
 
@@ -279,6 +310,12 @@ const renderRuleSelect = () => {
 };
 
 const renderRules = () => {
+  if (!rulesList) {
+    renderRuleSelect();
+    initializeCategoryOptions();
+    return;
+  }
+
   rulesList.innerHTML = '';
 
   if (!ratingRules.length) {
@@ -311,6 +348,7 @@ const buildHistoryEntryRow = (entry = {}) => {
 
   const selectedCategory = RATING_CATEGORIES.includes(entry.category) ? entry.category : RATING_CATEGORIES[0];
   const selectedScore = Number.isFinite(entry.score) ? entry.score : 5;
+  const createdAt = entry.createdAt || nowIso();
 
   wrapper.innerHTML = `
     <label>
@@ -322,6 +360,39 @@ const buildHistoryEntryRow = (entry = {}) => {
     <label>
       Score (1-10)
       <input name="historyScore" type="number" min="1" max="10" step="0.1" value="${selectedScore}" required />
+    </label>
+    <label>
+      History note
+      <input name="historyNote" type="text" value="${entry.note || ''}" placeholder="Arrived early all week" />
+    </label>
+    <label>
+      Added at
+      <input name="historyCreatedAt" type="text" value="${createdAt}" readonly />
+    </label>
+    <button type="button" class="secondary remove-history-entry">Remove</button>
+  `;
+
+  wrapper.querySelector('.remove-history-entry').addEventListener('click', () => {
+    wrapper.remove();
+  });
+
+  return wrapper;
+};
+
+const buildNoteEntryRow = (entry = {}) => {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'history-entry';
+
+  const createdAt = entry.createdAt || nowIso();
+
+  wrapper.innerHTML = `
+    <label>
+      Profile note
+      <input name="profileNote" type="text" value="${entry.note || ''}" placeholder="Prefers closing shift" required />
+    </label>
+    <label>
+      Added at
+      <input name="profileNoteCreatedAt" type="text" value="${createdAt}" readonly />
     </label>
     <button type="button" class="secondary remove-history-entry">Remove</button>
   `;
@@ -338,6 +409,14 @@ const resetHistoryEntries = (entries = []) => {
   const sourceEntries = entries.length ? entries : [{}];
   sourceEntries.forEach((entry) => {
     profileHistoryList.appendChild(buildHistoryEntryRow(entry));
+  });
+};
+
+const resetNoteEntries = (entries = []) => {
+  profileNotesList.innerHTML = '';
+  const sourceEntries = entries.length ? entries : [{}];
+  sourceEntries.forEach((entry) => {
+    profileNotesList.appendChild(buildNoteEntryRow(entry));
   });
 };
 
@@ -359,9 +438,21 @@ const collectHistoryEntries = () => {
     .map((row) => {
       const category = row.querySelector('select[name="historyCategory"]').value.trim();
       const score = Number(row.querySelector('input[name="historyScore"]').value);
-      return { category, score };
+      const note = row.querySelector('input[name="historyNote"]').value.trim();
+      const createdAt = row.querySelector('input[name="historyCreatedAt"]').value;
+      return { category, score, note, createdAt };
     })
     .filter((entry) => entry.category && Number.isFinite(entry.score));
+};
+
+const collectProfileNotes = () => {
+  return Array.from(profileNotesList.querySelectorAll('.history-entry'))
+    .map((row) => {
+      const note = row.querySelector('input[name="profileNote"]').value.trim();
+      const createdAt = row.querySelector('input[name="profileNoteCreatedAt"]').value;
+      return { note, createdAt };
+    })
+    .filter((entry) => entry.note);
 };
 
 const refreshFromBackend = async () => {
@@ -369,10 +460,14 @@ const refreshFromBackend = async () => {
   renderAll(profilesCache);
 };
 
-const toggleAddProfilePanel = (show) => {
-  addProfilePanel.classList.toggle('hidden', !show);
+const showProfilePage = (show) => {
+  mainPage.classList.toggle('hidden', show);
+  profilePage.classList.toggle('hidden', !show);
   if (show) {
+    history.pushState({ profilePage: true }, '', '#add-profile');
     document.getElementById('profileName').focus();
+  } else if (window.location.hash === '#add-profile') {
+    history.pushState({}, '', '#');
   }
 };
 
@@ -382,7 +477,7 @@ const buildRatingPayload = (data) => ({
   score: Number(data.get('score')),
   reviewer: data.get('reviewer').toString().trim(),
   note: data.get('note').toString().trim(),
-  ratedAt: new Date().toISOString(),
+  ratedAt: nowIso(),
 });
 
 const submitRating = async (rating) => {
@@ -404,113 +499,128 @@ form.addEventListener('submit', async (event) => {
     form.reset();
     document.getElementById('score').value = '5';
     initializeCategoryOptions();
-    ruleSelect.value = '';
+    if (ruleSelect) {
+      ruleSelect.value = '';
+    }
   } catch (error) {
     // eslint-disable-next-line no-alert
     alert(error.message);
   }
 });
 
-rulesForm.addEventListener('submit', (event) => {
-  event.preventDefault();
+if (rulesForm) {
+  rulesForm.addEventListener('submit', (event) => {
+    event.preventDefault();
 
-  const data = new FormData(rulesForm);
-  const category = data.get('ruleCategory').toString().trim();
-  const condition = data.get('ruleCondition').toString().trim();
-  const note = data.get('ruleNote').toString().trim();
-  const score = Number(data.get('ruleScore'));
+    const data = new FormData(rulesForm);
+    const category = data.get('ruleCategory').toString().trim();
+    const condition = data.get('ruleCondition').toString().trim();
+    const note = data.get('ruleNote').toString().trim();
+    const score = Number(data.get('ruleScore'));
 
-  if (!category || Number.isNaN(score)) return;
+    if (!category || Number.isNaN(score)) return;
 
-  ratingRules.push({
-    id: crypto.randomUUID(),
-    condition,
-    category,
-    score,
-    note,
+    ratingRules.push({
+      id: crypto.randomUUID(),
+      condition,
+      category,
+      score,
+      note,
+    });
+
+    saveRatingRules();
+    renderRules();
+    rulesForm.reset();
+    document.getElementById('ruleScore').value = '0';
   });
+}
 
-  saveRatingRules();
-  renderRules();
-  rulesForm.reset();
-  document.getElementById('ruleScore').value = '0';
-});
+if (rulesList) {
+  rulesList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
 
-rulesList.addEventListener('click', (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) return;
+    const ruleId = target.getAttribute('data-delete-rule');
+    if (!ruleId) return;
 
-  const ruleId = target.getAttribute('data-delete-rule');
-  if (!ruleId) return;
+    ratingRules = ratingRules.filter((rule) => rule.id !== ruleId);
+    saveRatingRules();
+    renderRules();
+  });
+}
 
-  ratingRules = ratingRules.filter((rule) => rule.id !== ruleId);
-  saveRatingRules();
-  renderRules();
-});
+if (ruleSelect) {
+  ruleSelect.addEventListener('change', () => {
+    const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
+    if (!selected) return;
 
-ruleSelect.addEventListener('change', () => {
-  const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
-  if (!selected) return;
+    categorySelect.value = selected.category;
+    document.getElementById('score').value = String(selected.score);
 
-  categorySelect.value = selected.category;
-  document.getElementById('score').value = String(selected.score);
+    const noteField = document.getElementById('note');
+    if (!noteField.value && selected.note) {
+      noteField.value = selected.note;
+    }
+  });
+}
 
-  const noteField = document.getElementById('note');
-  if (!noteField.value && selected.note) {
-    noteField.value = selected.note;
-  }
-});
+if (applyRuleButton) {
+  applyRuleButton.addEventListener('click', async () => {
+    const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
+    if (!selected) {
+      // eslint-disable-next-line no-alert
+      alert('Select a predefined category rule first.');
+      return;
+    }
 
-applyRuleButton.addEventListener('click', async () => {
-  const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
-  if (!selected) {
-    // eslint-disable-next-line no-alert
-    alert('Select a predefined category rule first.');
-    return;
-  }
+    const workerName = document.getElementById('workerName').value.trim();
+    const reviewer = document.getElementById('reviewer').value.trim();
+    if (!workerName || !reviewer) {
+      // eslint-disable-next-line no-alert
+      alert('Worker name and reviewer are required to apply a predefined rule.');
+      return;
+    }
 
-  const workerName = document.getElementById('workerName').value.trim();
-  const reviewer = document.getElementById('reviewer').value.trim();
-  if (!workerName || !reviewer) {
-    // eslint-disable-next-line no-alert
-    alert('Worker name and reviewer are required to apply a predefined rule.');
-    return;
-  }
+    const existingNote = document.getElementById('note').value.trim();
+    const combinedNote = [selected.note, existingNote].filter(Boolean).join(' | ');
 
-  const existingNote = document.getElementById('note').value.trim();
-  const combinedNote = [selected.note, existingNote].filter(Boolean).join(' | ');
+    const rating = {
+      workerName,
+      category: selected.category,
+      score: selected.score,
+      reviewer,
+      note: combinedNote,
+      ratedAt: nowIso(),
+    };
 
-  const rating = {
-    workerName,
-    category: selected.category,
-    score: selected.score,
-    reviewer,
-    note: combinedNote,
-    ratedAt: new Date().toISOString(),
-  };
-
-  try {
-    await submitRating(rating);
-    document.getElementById('score').value = '5';
-    document.getElementById('note').value = '';
-  } catch (error) {
-    // eslint-disable-next-line no-alert
-    alert(error.message);
-  }
-});
+    try {
+      await submitRating(rating);
+      document.getElementById('score').value = '5';
+      document.getElementById('note').value = '';
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error.message);
+    }
+  });
+}
 
 addProfileButton.addEventListener('click', () => {
-  toggleAddProfilePanel(true);
+  showProfilePage(true);
 });
 
 addHistoryEntryButton.addEventListener('click', () => {
   profileHistoryList.appendChild(buildHistoryEntryRow());
 });
 
+addNoteEntryButton.addEventListener('click', () => {
+  profileNotesList.appendChild(buildNoteEntryRow());
+});
+
 cancelAddProfileButton.addEventListener('click', () => {
   addProfileForm.reset();
   resetHistoryEntries();
-  toggleAddProfilePanel(false);
+  resetNoteEntries();
+  showProfilePage(false);
 });
 
 addProfileForm.addEventListener('submit', async (event) => {
@@ -522,6 +632,7 @@ addProfileForm.addEventListener('submit', async (event) => {
     status: data.get('status').toString().trim(),
     background: data.get('background').toString().trim(),
     historyEntries: collectHistoryEntries(),
+    profileNotes: collectProfileNotes(),
   };
 
   try {
@@ -532,7 +643,8 @@ addProfileForm.addEventListener('submit', async (event) => {
     document.getElementById('workerName').value = savedProfile.name;
     addProfileForm.reset();
     resetHistoryEntries();
-    toggleAddProfilePanel(false);
+    resetNoteEntries();
+    showProfilePage(false);
   } catch (error) {
     // eslint-disable-next-line no-alert
     alert(error.message);
@@ -554,9 +666,17 @@ clearButton.addEventListener('click', async () => {
   }
 });
 
+window.addEventListener('popstate', () => {
+  showProfilePage(window.location.hash === '#add-profile');
+});
+
+ratingRules = loadRatingRules();
 initializeCategoryOptions();
 initializeStatusOptions();
+renderRules();
 resetHistoryEntries();
+resetNoteEntries();
+showProfilePage(window.location.hash === '#add-profile');
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });
