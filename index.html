@@ -8,125 +8,139 @@
   </head>
   <body>
     <main class="container">
-      <header>
-        <h1>Worker Rating Intake</h1>
-        <p>Capture standardized performance ratings and maintain long-term worker profiles.</p>
-      </header>
+      <section id="main-page">
+        <header>
+          <h1>Worker Rating Intake</h1>
+          <p>Capture standardized performance ratings and maintain long-term worker profiles.</p>
+        </header>
 
-      <section class="card">
-        <h2>Add Rating</h2>
-        <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>.</p>
-        <form id="rating-form">
-          <div class="field-grid">
+        <section class="card">
+          <h2>Add Rating</h2>
+          <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>.</p>
+          <form id="rating-form">
+            <div class="field-grid">
+              <label>
+                <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
+                <input id="workerName" name="workerName" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="worker-name-error" />
+                <span id="worker-name-error" class="field-error">Enter at least 2 characters for worker name.</span>
+              </label>
+
+              <label>
+                <span class="label-text">Category <span class="required-indicator" aria-hidden="true">*</span></span>
+                <select id="category" name="category" required aria-describedby="category-error"></select>
+                <span id="category-error" class="field-error">Select a category before saving.</span>
+              </label>
+
+              <label>
+                <span class="label-text">Predefined category rules</span>
+                <select id="rating-rule-select" aria-label="Select predefined rating rule"></select>
+              </label>
+
+              <label>
+                <span class="label-text">Score (-10 to 10) <span class="required-indicator" aria-hidden="true">*</span></span>
+                <input id="score" name="score" type="number" min="-10" max="10" step="0.1" value="5" required aria-describedby="score-error" />
+                <span id="score-error" class="field-error">Use a value between -10 and 10.</span>
+              </label>
+
+              <label>
+                <span class="label-text">Reviewer <span class="required-indicator" aria-hidden="true">*</span></span>
+                <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" aria-describedby="reviewer-error" />
+                <span id="reviewer-error" class="field-error">Reviewer name is required.</span>
+              </label>
+            </div>
+
+            <p class="score-guidance" role="note">
+              Scoring guide: use negative values for penalties (e.g., -3 for "Was late"), 0 for neutral, and up to 10 for exceptional performance.
+            </p>
+
             <label>
-              <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
-              <input id="workerName" name="workerName" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="worker-name-error" />
-              <span id="worker-name-error" class="field-error">Enter at least 2 characters for worker name.</span>
+              <span class="label-text">Notes (strengths / weaknesses)</span>
+              <textarea id="note" name="note" rows="4" placeholder="Great pace on loading dock, needs help with labeling accuracy."></textarea>
             </label>
 
-            <label>
-              <span class="label-text">Category <span class="required-indicator" aria-hidden="true">*</span></span>
-              <select id="category" name="category" required aria-describedby="category-error"></select>
-              <span id="category-error" class="field-error">Select a category before saving.</span>
-            </label>
+            <div class="form-actions">
+              <button type="submit">Save Rating</button>
+              <button type="button" id="apply-rating-rule" class="secondary">Add Selected Category Rating</button>
+            </div>
+          </form>
+        </section>
 
-            <label>
-              <span class="label-text">Predefined category rules</span>
-              <select id="rating-rule-select" aria-label="Select predefined rating rule"></select>
-            </label>
-
-            <label>
-              <span class="label-text">Score (-10 to 10) <span class="required-indicator" aria-hidden="true">*</span></span>
-              <input id="score" name="score" type="number" min="-10" max="10" step="0.1" value="5" required aria-describedby="score-error" />
-              <span id="score-error" class="field-error">Use a value between -10 and 10.</span>
-            </label>
-
-            <label>
-              <span class="label-text">Reviewer <span class="required-indicator" aria-hidden="true">*</span></span>
-              <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" aria-describedby="reviewer-error" />
-              <span id="reviewer-error" class="field-error">Reviewer name is required.</span>
-            </label>
+        <section class="card">
+          <div class="section-header">
+            <h2>Worker Profiles</h2>
+            <div class="section-actions">
+              <button type="button" id="add-profile" class="secondary">Add Profile</button>
+              <button type="button" id="clear-data" class="secondary">Clear all</button>
+            </div>
           </div>
+          <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
+          <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
+          <ul id="profiles" class="profiles"></ul>
+        </section>
 
-          <p class="score-guidance" role="note">
-            Scoring guide: use negative values for penalties (e.g., -3 for "Was late"), 0 for neutral, and up to 10 for exceptional performance.
-          </p>
-
+        <section class="card">
+          <h2>Retrieve Worker Profile</h2>
           <label>
-            <span class="label-text">Notes (strengths / weaknesses)</span>
-            <textarea id="note" name="note" rows="4" placeholder="Great pace on loading dock, needs help with labeling accuracy."></textarea>
+            <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
+            <select id="worker-selector" aria-label="Select worker profile"></select>
           </label>
-
-          <div class="form-actions">
-            <button type="submit">Save Rating</button>
-            <button type="button" id="apply-rating-rule" class="secondary">Add Selected Category Rating</button>
+          <div id="worker-profile-detail" class="profile-detail">
+            <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
           </div>
-        </form>
+        </section>
       </section>
 
-      <section id="add-profile-panel" class="card hidden" aria-label="Add worker profile panel">
-        <h2>Add Worker Profile</h2>
-        <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>.</p>
-        <form id="add-profile-form">
-          <div class="field-grid">
+      <section id="profile-page" class="hidden" aria-label="Add worker profile page">
+        <section class="card">
+          <div class="section-header">
+            <h2>Create Worker Profile</h2>
+            <button type="button" id="cancel-add-profile" class="secondary">Back to Profiles</button>
+          </div>
+          <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>. History and notes are timestamped automatically when you add them.</p>
+          <form id="add-profile-form">
+            <div class="field-grid">
+              <label>
+                <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
+                <input id="profileName" name="name" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="profile-name-error" />
+                <span id="profile-name-error" class="field-error">Worker name must be at least 2 characters.</span>
+              </label>
+
+              <label>
+                <span class="label-text">Status <span class="required-indicator" aria-hidden="true">*</span></span>
+                <select id="profileStatus" name="status" required aria-describedby="profile-status-error">
+                  <option value="">Select status</option>
+                  <option value="Full-time">Full-time</option>
+                  <option value="Part-time">Part-time</option>
+                  <option value="New">New</option>
+                </select>
+                <span id="profile-status-error" class="field-error">Choose a status to continue.</span>
+              </label>
+            </div>
+
             <label>
-              <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
-              <input id="profileName" name="name" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="profile-name-error" />
-              <span id="profile-name-error" class="field-error">Worker name must be at least 2 characters.</span>
+              <span class="label-text">Background info</span>
+              <textarea id="profileBackground" name="background" rows="4" placeholder="Experience, certifications, shift preferences, or other context."></textarea>
             </label>
 
-            <label>
-              <span class="label-text">Status <span class="required-indicator" aria-hidden="true">*</span></span>
-              <select id="profileStatus" name="status" required aria-describedby="profile-status-error">
-                <option value="">Select status</option>
-                <option value="Full-time">Full-time</option>
-                <option value="Part-time">Part-time</option>
-                <option value="New">New</option>
-              </select>
-              <span id="profile-status-error" class="field-error">Choose a status to continue.</span>
-            </label>
-          </div>
+            <fieldset class="history-fieldset">
+              <legend>Timed worker history</legend>
+              <p class="hint">Add one or more category + score + detail entries to save with this profile.</p>
+              <div id="profile-history-list" class="history-list"></div>
+              <button type="button" id="add-history-entry" class="secondary">Add history entry</button>
+            </fieldset>
 
-          <label>
-            <span class="label-text">Background info</span>
-            <textarea id="profileBackground" name="background" rows="4" placeholder="Experience, certifications, shift preferences, or other context."></textarea>
-          </label>
+            <fieldset class="history-fieldset">
+              <legend>Timed profile notes</legend>
+              <p class="hint">Add notes that belong to the profile timeline.</p>
+              <div id="profile-notes-list" class="history-list"></div>
+              <button type="button" id="add-note-entry" class="secondary">Add timed note</button>
+            </fieldset>
 
-          <fieldset class="history-fieldset">
-            <legend>Worker history</legend>
-            <p class="hint">Add one or more category + score entries to save with this profile.</p>
-            <div id="profile-history-list" class="history-list"></div>
-            <button type="button" id="add-history-entry" class="secondary">Add history entry</button>
-          </fieldset>
-
-          <div class="form-actions">
-            <button type="submit">Save Profile</button>
-            <button type="button" id="cancel-add-profile" class="secondary">Cancel</button>
-          </div>
-        </form>
-      </section>
-      <section class="card">
-        <div class="section-header">
-          <h2>Worker Profiles</h2>
-          <div class="section-actions">
-            <button type="button" id="add-profile" class="secondary">Add Profile</button>
-            <button type="button" id="clear-data" class="secondary">Clear all</button>
-          </div>
-        </div>
-        <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
-        <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
-        <ul id="profiles" class="profiles"></ul>
-      </section>
-
-      <section class="card">
-        <h2>Retrieve Worker Profile</h2>
-        <label>
-          <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
-          <select id="worker-selector" aria-label="Select worker profile"></select>
-        </label>
-        <div id="worker-profile-detail" class="profile-detail">
-          <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
-        </div>
+            <div class="form-actions">
+              <button type="submit">Create Profile</button>
+            </div>
+          </form>
+        </section>
       </section>
     </main>
 

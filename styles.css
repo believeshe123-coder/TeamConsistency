@@ -308,6 +308,16 @@ button.secondary {
   white-space: nowrap;
 }
 
+
+#profile-page input[readonly] {
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+
+#profile-page .card {
+  margin-top: var(--space-6);
+}
+
 @media (max-width: 640px) {
   .container {
     margin: var(--space-4) auto;

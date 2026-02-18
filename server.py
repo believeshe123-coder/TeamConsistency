@@ -64,6 +64,19 @@ def initialize_database() -> None:
                 worker_id INTEGER NOT NULL,
                 category TEXT NOT NULL,
                 score REAL NOT NULL,
+                note TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
+            )
+            '''
+        )
+
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS worker_profile_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id INTEGER NOT NULL,
+                note TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (worker_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
             )
@@ -71,6 +84,7 @@ def initialize_database() -> None:
         )
 
         ensure_profile_columns(connection)
+        ensure_profile_history_columns(connection)
 
 
 def ensure_profile_columns(connection: sqlite3.Connection) -> None:
@@ -81,6 +95,13 @@ def ensure_profile_columns(connection: sqlite3.Connection) -> None:
 
     if 'background_info' not in columns:
         connection.execute('ALTER TABLE worker_profiles ADD COLUMN background_info TEXT')
+
+
+def ensure_profile_history_columns(connection: sqlite3.Connection) -> None:
+    columns = {row['name'] for row in connection.execute('PRAGMA table_info(worker_profile_history)').fetchall()}
+
+    if 'note' not in columns:
+        connection.execute('ALTER TABLE worker_profile_history ADD COLUMN note TEXT')
 
 
 def validate_rating_payload(payload: dict, require_worker_name: bool = False) -> str | None:
@@ -124,6 +145,15 @@ def validate_history_entries(entries: list[dict]) -> str | None:
     return None
 
 
+def validate_profile_notes(notes: list[dict]) -> str | None:
+    for note_entry in notes:
+        note = str(note_entry.get('note', '')).strip()
+        if not note:
+            return 'Each profile note requires note text'
+
+    return None
+
+
 def validate_profile_payload(payload: dict) -> str | None:
     name = str(payload.get('name', payload.get('workerName', ''))).strip()
     status = str(payload.get('status', '')).strip()
@@ -139,6 +169,17 @@ def validate_profile_payload(payload: dict) -> str | None:
 
     if not isinstance(history_entries, list):
         return 'historyEntries must be an array'
+
+    profile_notes = payload.get('profileNotes', payload.get('notesTimeline', []))
+    if profile_notes is None:
+        profile_notes = []
+
+    if not isinstance(profile_notes, list):
+        return 'profileNotes must be an array'
+
+    notes_error = validate_profile_notes(profile_notes)
+    if notes_error:
+        return notes_error
 
     return validate_history_entries(history_entries)
 
@@ -160,7 +201,7 @@ def fetch_ratings(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
 def fetch_profile_history(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
     rows = connection.execute(
         '''
-        SELECT id, category, score, created_at AS createdAt
+        SELECT id, category, score, note, created_at AS createdAt
         FROM worker_profile_history
         WHERE worker_id = ?
         ORDER BY id ASC
@@ -175,16 +216,48 @@ def replace_profile_history(connection: sqlite3.Connection, worker_id: int, entr
     for entry in entries:
         connection.execute(
             '''
-            INSERT INTO worker_profile_history (worker_id, category, score)
+            INSERT INTO worker_profile_history (worker_id, category, score, note, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ''',
+            (
+                worker_id,
+                str(entry.get('category')).strip(),
+                float(entry.get('score')),
+                str(entry.get('note', '')).strip() or None,
+                entry.get('createdAt') or now_iso(),
+            ),
+        )
+
+
+def fetch_profile_notes(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
+    rows = connection.execute(
+        '''
+        SELECT id, note, created_at AS createdAt
+        FROM worker_profile_notes
+        WHERE worker_id = ?
+        ORDER BY datetime(created_at) ASC, id ASC
+        ''',
+        (worker_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def replace_profile_notes(connection: sqlite3.Connection, worker_id: int, notes: list[dict]) -> None:
+    connection.execute('DELETE FROM worker_profile_notes WHERE worker_id = ?', (worker_id,))
+    for note_entry in notes:
+        connection.execute(
+            '''
+            INSERT INTO worker_profile_notes (worker_id, note, created_at)
             VALUES (?, ?, ?)
             ''',
-            (worker_id, str(entry.get('category')).strip(), float(entry.get('score'))),
+            (worker_id, str(note_entry.get('note')).strip(), note_entry.get('createdAt') or now_iso()),
         )
 
 
 def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> dict:
     ratings = fetch_ratings(connection, int(profile_row['id']))
     history_entries = fetch_profile_history(connection, int(profile_row['id']))
+    profile_notes = fetch_profile_notes(connection, int(profile_row['id']))
     categories = sorted({entry['category'] for entry in ratings})
     overall_score = round(sum(float(entry['score']) for entry in ratings) / len(ratings), 2) if ratings else 0
 
@@ -202,6 +275,7 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
         'backgroundInfo': profile_row['background_info'],
         'ratings': ratings,
         'historyEntries': history_entries,
+        'profileNotes': profile_notes,
         'jobCategories': categories,
         'overallScore': overall_score,
     }
@@ -272,6 +346,7 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             profile_status = str(payload.get('status')).strip()
             background_info = str(payload.get('background', payload.get('backgroundInfo', ''))).strip()
             history_entries = payload.get('historyEntries', payload.get('history', [])) or []
+            profile_notes = payload.get('profileNotes', payload.get('notesTimeline', [])) or []
 
             with db_connection() as connection:
                 existing = connection.execute(
@@ -302,6 +377,7 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                     status = 200
 
                 replace_profile_history(connection, worker_id, history_entries)
+                replace_profile_notes(connection, worker_id, profile_notes)
                 row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
                 profile = build_profile(connection, row)
 
@@ -485,6 +561,7 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             return
 
         with db_connection() as connection:
+            connection.execute('DELETE FROM worker_profile_notes')
             connection.execute('DELETE FROM worker_profile_history')
             connection.execute('DELETE FROM worker_ratings')
             connection.execute('DELETE FROM worker_profiles')
