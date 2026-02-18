@@ -57,6 +57,19 @@ def initialize_database() -> None:
             '''
         )
 
+        connection.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS worker_profile_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id INTEGER NOT NULL,
+                category TEXT NOT NULL,
+                score REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
+            )
+            '''
+        )
+
         ensure_profile_columns(connection)
 
 
@@ -94,6 +107,23 @@ def validate_rating_payload(payload: dict, require_worker_name: bool = False) ->
     return None
 
 
+def validate_history_entries(entries: list[dict]) -> str | None:
+    for entry in entries:
+        category = str(entry.get('category', '')).strip()
+        if not category:
+            return 'Each history entry requires a category'
+
+        try:
+            score = float(entry.get('score', ''))
+        except (TypeError, ValueError):
+            score = None
+
+        if score is None or score < 1 or score > 10:
+            return 'Each history entry score must be a number between 1 and 10'
+
+    return None
+
+
 def validate_profile_payload(payload: dict) -> str | None:
     name = str(payload.get('name', payload.get('workerName', ''))).strip()
     status = str(payload.get('status', '')).strip()
@@ -103,7 +133,14 @@ def validate_profile_payload(payload: dict) -> str | None:
     if not status:
         return 'Missing required field: status'
 
-    return None
+    history_entries = payload.get('historyEntries', payload.get('history', []))
+    if history_entries is None:
+        history_entries = []
+
+    if not isinstance(history_entries, list):
+        return 'historyEntries must be an array'
+
+    return validate_history_entries(history_entries)
 
 
 def fetch_ratings(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
@@ -120,8 +157,34 @@ def fetch_ratings(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def fetch_profile_history(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
+    rows = connection.execute(
+        '''
+        SELECT id, category, score, created_at AS createdAt
+        FROM worker_profile_history
+        WHERE worker_id = ?
+        ORDER BY id ASC
+        ''',
+        (worker_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def replace_profile_history(connection: sqlite3.Connection, worker_id: int, entries: list[dict]) -> None:
+    connection.execute('DELETE FROM worker_profile_history WHERE worker_id = ?', (worker_id,))
+    for entry in entries:
+        connection.execute(
+            '''
+            INSERT INTO worker_profile_history (worker_id, category, score)
+            VALUES (?, ?, ?)
+            ''',
+            (worker_id, str(entry.get('category')).strip(), float(entry.get('score'))),
+        )
+
+
 def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> dict:
     ratings = fetch_ratings(connection, int(profile_row['id']))
+    history_entries = fetch_profile_history(connection, int(profile_row['id']))
     categories = sorted({entry['category'] for entry in ratings})
     overall_score = round(sum(float(entry['score']) for entry in ratings) / len(ratings), 2) if ratings else 0
 
@@ -138,6 +201,7 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
         'profileStatus': profile_row['profile_status'],
         'backgroundInfo': profile_row['background_info'],
         'ratings': ratings,
+        'historyEntries': history_entries,
         'jobCategories': categories,
         'overallScore': overall_score,
     }
@@ -207,6 +271,7 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             worker_name = str(payload.get('name', payload.get('workerName'))).strip()
             profile_status = str(payload.get('status')).strip()
             background_info = str(payload.get('background', payload.get('backgroundInfo', ''))).strip()
+            history_entries = payload.get('historyEntries', payload.get('history', [])) or []
 
             with db_connection() as connection:
                 existing = connection.execute(
@@ -236,6 +301,7 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                     )
                     status = 200
 
+                replace_profile_history(connection, worker_id, history_entries)
                 row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
                 profile = build_profile(connection, row)
 
@@ -419,6 +485,7 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             return
 
         with db_connection() as connection:
+            connection.execute('DELETE FROM worker_profile_history')
             connection.execute('DELETE FROM worker_ratings')
             connection.execute('DELETE FROM worker_profiles')
 
