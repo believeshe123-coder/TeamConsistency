@@ -26,7 +26,8 @@
             <div class="field-grid">
               <label>
                 <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
-                <input id="workerName" name="workerName" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="worker-name-error" />
+                <input id="workerName" name="workerName" type="text" list="worker-name-options" required minlength="2" placeholder="Jordan Patel" aria-describedby="worker-name-error" />
+                <datalist id="worker-name-options"></datalist>
                 <span id="worker-name-error" class="field-error">Enter at least 2 characters for worker name.</span>
               </label>
 
@@ -46,22 +47,28 @@
                 <select id="common-problem-select" aria-label="Select common problem"></select>
               </label>
 
-              <label>
-                <span class="label-text">Score (-10 to 10) <span class="required-indicator" aria-hidden="true">*</span></span>
-                <input id="score" name="score" type="number" min="-10" max="10" step="0.1" value="5" required aria-describedby="score-error" />
-                <span id="score-error" class="field-error">Use a value between -10 and 10.</span>
-              </label>
-
-              <label>
-                <span class="label-text">Reviewer <span class="required-indicator" aria-hidden="true">*</span></span>
-                <input id="reviewer" name="reviewer" type="text" required placeholder="Supervisor name" aria-describedby="reviewer-error" />
-                <span id="reviewer-error" class="field-error">Reviewer name is required.</span>
-              </label>
             </div>
 
             <p class="score-guidance" role="note">
-              Scoring guide: use negative values for penalties (e.g., -3 for "Was late"), 0 for neutral, and up to 10 for exceptional performance.
+              Scoring scale is capped at -5 to +5. 0 means average. Ratings are anonymous.
             </p>
+
+            <fieldset class="history-fieldset">
+              <legend>How was our worker?</legend>
+              <p class="hint">Check each item you want to rate, then pick where they landed from bad (left) to good (right).</p>
+              <div id="criterion-ratings" class="criteria-list"></div>
+              <p id="score-error" class="field-error">Pick at least one checklist item before saving.</p>
+            </fieldset>
+
+            <label>
+              <span class="label-text">Good notes</span>
+              <textarea id="good-notes" name="goodNotes" rows="2" placeholder="What went well?"></textarea>
+            </label>
+
+            <label>
+              <span class="label-text">Needs improvement notes</span>
+              <textarea id="bad-notes" name="badNotes" rows="2" placeholder="What should improve next time?"></textarea>
+            </label>
 
             <label>
               <span class="label-text">Notes (strengths / weaknesses)</span>
@@ -178,6 +185,39 @@
                 </label>
               </div>
               <button type="button" id="add-common-problem" class="secondary">Add common problem</button>
+            </fieldset>
+
+            <fieldset class="history-fieldset">
+              <legend>Rating checklist items</legend>
+              <p class="hint">Add new checklist rows for the main rating form.</p>
+              <div id="rating-criteria-list" class="history-list"></div>
+              <div class="field-grid">
+                <label>
+                  <span class="label-text">Item name</span>
+                  <input id="criterion-name" type="text" placeholder="Late / on time" />
+                </label>
+                <label>
+                  <span class="label-text">Very bad label</span>
+                  <input id="criterion-very-bad" type="text" placeholder="Extremely late" />
+                </label>
+                <label>
+                  <span class="label-text">A little bad label</span>
+                  <input id="criterion-little-bad" type="text" placeholder="A bit late" />
+                </label>
+                <label>
+                  <span class="label-text">Neutral label</span>
+                  <input id="criterion-neutral" type="text" placeholder="On time" />
+                </label>
+                <label>
+                  <span class="label-text">A little good label</span>
+                  <input id="criterion-little-good" type="text" placeholder="Slightly early" />
+                </label>
+                <label>
+                  <span class="label-text">Very good label</span>
+                  <input id="criterion-very-good" type="text" placeholder="Extremely early" />
+                </label>
+              </div>
+              <button type="button" id="add-rating-criterion" class="secondary">Add checklist item</button>
             </fieldset>
 
             <div class="form-actions">
