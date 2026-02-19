@@ -8,17 +8,6 @@
   </head>
   <body>
     <main class="container">
-      <div class="window-titlebar" aria-hidden="true">Worker Ratings Console - Logged in as: Operations Manager</div>
-      <nav class="menu-strip" aria-label="Application menu">
-        <a href="#">Setup</a>
-        <a href="#">Processes</a>
-        <a href="#">Reports</a>
-        <a href="#">Tools</a>
-        <a href="#">Window</a>
-        <a href="#">Help</a>
-        <a href="#">Exit</a>
-      </nav>
-
       <div class="page-tabs" role="tablist" aria-label="Main pages">
         <button type="button" id="tab-ratings" class="tab active" role="tab" aria-selected="true">Ratings</button>
         <button type="button" id="tab-admin" class="tab secondary" role="tab" aria-selected="false">Admin Settings</button>
@@ -93,29 +82,31 @@
           </form>
         </section>
 
-        <section class="card">
-          <h2>Retrieve Worker Profile</h2>
-          <label>
-            <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
-            <select id="worker-selector" aria-label="Select worker profile"></select>
-          </label>
-          <div id="worker-profile-detail" class="profile-detail">
-            <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="section-header">
-            <h2>Worker Profiles</h2>
-            <div class="section-actions">
-              <button type="button" id="add-profile" class="secondary">Add Profile</button>
-              <button type="button" id="clear-data" class="secondary">Clear all</button>
+        <div class="right-column-stack">
+          <section class="card">
+            <h2>Retrieve Worker Profile</h2>
+            <label>
+              <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
+              <select id="worker-selector" aria-label="Select worker profile"></select>
+            </label>
+            <div id="worker-profile-detail" class="profile-detail">
+              <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
             </div>
-          </div>
-          <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
-          <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
-          <ul id="profiles" class="profiles"></ul>
-        </section>
+          </section>
+
+          <section class="card">
+            <div class="section-header">
+              <h2>Worker Profiles</h2>
+              <div class="section-actions">
+                <button type="button" id="add-profile" class="secondary">Add Profile</button>
+                <button type="button" id="clear-data" class="secondary">Clear all</button>
+              </div>
+            </div>
+            <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
+            <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
+            <ul id="profiles" class="profiles"></ul>
+          </section>
+        </div>
       </section>
 
       <section id="profile-page" class="hidden" aria-label="Add worker profile page">
