@@ -351,6 +351,27 @@ select:user-invalid {
   line-height: 1.35;
 }
 
+#admin-settings-form .row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recent-color-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.recent-color-chip {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border: 1px solid #5d657d;
+  padding: 0;
+}
+
 .admin-inline-actions {
   justify-content: flex-start;
 }
@@ -520,6 +541,17 @@ select:user-invalid {
 
 .checklist-math-builder .full-width {
   grid-column: 1 / -1;
+}
+
+.bulk-setup-block {
+  margin-top: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.bulk-setup-block textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
 
 .top-performer {
