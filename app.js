@@ -35,6 +35,9 @@ const criteriaRatingsContainer = document.getElementById('criterion-ratings');
 const ratingCriteriaList = document.getElementById('rating-criteria-list');
 const addRatingCriterionButton = document.getElementById('add-rating-criterion');
 const workerNameSelect = document.getElementById('workerName');
+const quickAddWorkerButton = document.getElementById('quick-add-worker');
+const quickWorkerNameInput = document.getElementById('quick-worker-name');
+const quickWorkerFeedback = document.getElementById('quick-worker-feedback');
 
 let profilesCache = [];
 let ratingRules = [];
@@ -408,6 +411,34 @@ const buildCategoryHistory = (ratings) => {
   }, {});
 };
 
+const summarizeJobTypeScores = (ratings) => {
+  const byJobType = ratings.reduce((summary, entry) => {
+    const jobType = String(entry.category || '').trim();
+    if (!jobType) return summary;
+
+    if (!summary[jobType]) {
+      summary[jobType] = { jobType, total: 0, reviews: 0, lastRatedAt: '' };
+    }
+
+    summary[jobType].total += Number(entry.score || 0);
+    summary[jobType].reviews += 1;
+
+    const ratedAt = String(entry.ratedAt || '');
+    if (!summary[jobType].lastRatedAt || new Date(ratedAt).getTime() > new Date(summary[jobType].lastRatedAt).getTime()) {
+      summary[jobType].lastRatedAt = ratedAt;
+    }
+
+    return summary;
+  }, {});
+
+  return Object.values(byJobType)
+    .map((entry) => ({
+      ...entry,
+      average: Number((entry.total / entry.reviews).toFixed(2)),
+    }))
+    .sort((a, b) => b.average - a.average || b.reviews - a.reviews || a.jobType.localeCompare(b.jobType));
+};
+
 const renderProfileNotesTimeline = (profileId, profileNotes) => {
   if (!profileNotes?.length) {
     return '<p class="hint">No timed profile notes saved yet.</p>';
@@ -545,63 +576,77 @@ const renderWorkerProfile = (profiles, workerId) => {
     return;
   }
 
-  const categoryHistory = buildCategoryHistory(profile.ratings);
+  const ratings = Array.isArray(profile.ratings) ? profile.ratings : [];
+  const jobTypeSummary = summarizeJobTypeScores(ratings);
+  const topJobTypes = jobTypeSummary.slice(0, 3);
+  const totalReviews = ratings.length;
+  const overallScore = Number(profile.overallScore || 0).toFixed(2);
 
-  const categorySections = Object.keys(categoryHistory).map((category) => {
-    const history = categoryHistory[category] ?? [];
-    const trend = buildTrendText(history);
+  const topJobTypeText = topJobTypes.length
+    ? topJobTypes.map((entry) => `${entry.jobType} (${entry.average})`).join(' · ')
+    : 'No job types rated yet';
 
-    const rows = history.length
-      ? history
-          .map((entry) => {
-            const formattedDate = new Date(entry.ratedAt).toLocaleString();
-            const note = entry.note ? ` — ${entry.note}` : '';
-            return `<li>${formattedDate}: ${entry.score}${note}</li>`;
-          })
-          .join('')
-      : '<li>No ratings yet.</li>';
+  const scoreRows = jobTypeSummary.length
+    ? jobTypeSummary
+        .map((entry) => {
+          const lastRated = entry.lastRatedAt ? formatTimestamp(entry.lastRatedAt) : '—';
+          return `
+            <tr>
+              <td>${entry.jobType}</td>
+              <td>${entry.average}</td>
+              <td>${entry.reviews}</td>
+              <td>${lastRated}</td>
+            </tr>
+          `;
+        })
+        .join('')
+    : '<tr><td colspan="4">No job type scores yet.</td></tr>';
 
-    return `
-      <article class="category-history">
-        <h4>${category}</h4>
-        <p class="trend">Trend: ${trend}</p>
-        <ul>${rows}</ul>
-      </article>
-    `;
-  }).join('');
+  const badgeClass = ratings.length ? statusFromScore(profile.overallScore) : 'steady';
+  const badgeLabel = ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
 
-  const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
-  const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
-  const { rankScore, statusWeight } = computeRankScore(profile);
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
+      <div class="profile-score-cards">
+        <article class="profile-score-card">
+          <p class="hint">Overall rating</p>
+          <strong>${overallScore}</strong>
+        </article>
+        <article class="profile-score-card">
+          <p class="hint">Jobs done (reviews)</p>
+          <strong>${totalReviews}</strong>
+        </article>
+        <article class="profile-score-card">
+          <p class="hint">Top job types</p>
+          <strong>${topJobTypeText}</strong>
+        </article>
+      </div>
       <div class="meta">
         <span>Status: ${profile.profileStatus || '—'}</span>
-        <span>Total ratings: ${profile.ratings.length}</span>
-        <span>Overall avg: ${profile.overallScore}</span>
-        <span>Rank score: ${rankScore}</span>
-        <span>Status weight: ${statusWeight}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
-      <article class="category-history">
-        <h4>Background</h4>
-        ${profile.backgroundInfo ? `<p>${profile.backgroundInfo}</p>` : '<p class="hint">No background info added yet.</p>'}
-      </article>
     </div>
+
     <article class="category-history">
-      <h4>Exact ratings</h4>
-      ${renderExactRatings(profile.id, profile.ratings)}
+      <h4>Job type scores</h4>
+      <table class="job-score-table">
+        <thead>
+          <tr>
+            <th>Job type</th>
+            <th>Avg score</th>
+            <th>Reviews</th>
+            <th>Last rated</th>
+          </tr>
+        </thead>
+        <tbody>${scoreRows}</tbody>
+      </table>
     </article>
-    <article class="category-history">
-      <h4>Saved profile history checklist</h4>
-      ${renderHistorySummary(profile.historyEntries)}
-    </article>
-    <article class="category-history">
-      <h4>Timed profile notes</h4>
-      ${renderProfileNotesTimeline(profile.id, profile.profileNotes)}
-    </article>
-    <div class="category-history-grid">${categorySections}</div>
+
+    <details class="category-history">
+      <summary><strong>Full job rating details</strong></summary>
+      ${renderExactRatings(profile.id, ratings)}
+    </details>
   `;
 };
 
@@ -867,6 +912,53 @@ const collectProfileNotes = () => {
 const refreshFromBackend = async () => {
   profilesCache = await fetchProfiles();
   renderAll(profilesCache);
+};
+
+const setQuickWorkerFeedback = (message, isError = false) => {
+  if (!quickWorkerFeedback) return;
+  quickWorkerFeedback.textContent = message;
+  quickWorkerFeedback.classList.toggle('field-error', isError);
+};
+
+const quickAddWorkerByName = async () => {
+  if (!quickWorkerNameInput) return;
+
+  const workerName = quickWorkerNameInput.value.trim();
+  if (workerName.length < 2) {
+    setQuickWorkerFeedback('Worker name must be at least 2 characters.', true);
+    return;
+  }
+
+  const existing = profilesCache.find((profile) => String(profile.name || '').trim().toLowerCase() === workerName.toLowerCase());
+  if (existing) {
+    workerNameSelect.value = existing.name;
+    setQuickWorkerFeedback('Worker already exists. Selected existing profile.');
+    return;
+  }
+
+  try {
+    const savedProfile = await addProfile({
+      name: workerName,
+      status: '',
+      background: '',
+      historyEntries: [],
+      profileNotes: [],
+    });
+
+    await refreshFromBackend();
+
+    const matched = profilesCache.find((profile) => String(profile.id) === String(savedProfile.id))
+      || profilesCache.find((profile) => String(profile.name || '').trim().toLowerCase() === workerName.toLowerCase());
+
+    if (matched) {
+      workerNameSelect.value = matched.name;
+    }
+
+    quickWorkerNameInput.value = '';
+    setQuickWorkerFeedback(`Added worker "${workerName}".`);
+  } catch (error) {
+    setQuickWorkerFeedback(error.message || 'Unable to add worker right now.', true);
+  }
 };
 
 const showProfilePage = (show) => {
@@ -1196,6 +1288,20 @@ addProfileForm.addEventListener('submit', async (event) => {
 workerSelector.addEventListener('change', () => {
   renderWorkerProfile(profilesCache, workerSelector.value);
 });
+
+if (quickAddWorkerButton) {
+  quickAddWorkerButton.addEventListener('click', async () => {
+    await quickAddWorkerByName();
+  });
+}
+
+if (quickWorkerNameInput) {
+  quickWorkerNameInput.addEventListener('keydown', async (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    await quickAddWorkerByName();
+  });
+}
 
 clearButton.addEventListener('click', async () => {
   try {
