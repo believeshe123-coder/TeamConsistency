@@ -8,6 +8,7 @@ const SCORE_CHOICES = [-5, -2.5, 0, 2.5, 5];
 const ADMIN_ACCESS_PASSWORD_KEY = 'worker-admin-access-password-v1';
 const ADMIN_ACCESS_SESSION_KEY = 'worker-admin-access-session-v1';
 const DEFAULT_ADMIN_ACCESS_PASSWORD = '1234';
+const RECENT_TAG_COLORS_KEY = 'worker-recent-tag-colors-v1';
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -50,9 +51,18 @@ const mathTagInput = document.getElementById('math-tag');
 const customTagsList = document.getElementById('custom-tags-list');
 const customTagNameInput = document.getElementById('custom-tag-name');
 const customTagColorInput = document.getElementById('custom-tag-color');
+const customTagRecentColors = document.getElementById('custom-tag-recent-colors');
 const addCustomTagButton = document.getElementById('add-custom-tag');
 const mathInsightInput = document.getElementById('math-insight');
 const addChecklistMathRuleButton = document.getElementById('add-checklist-math-rule');
+const bulkChecklistRulesInput = document.getElementById('bulk-checklist-rules');
+const applyBulkChecklistRulesButton = document.getElementById('apply-bulk-checklist-rules');
+const bulkTagsInput = document.getElementById('bulk-tags');
+const applyBulkTagsButton = document.getElementById('apply-bulk-tags');
+const addJobTypePanel = document.getElementById('add-job-type-panel');
+const addRatingCriterionPanel = document.getElementById('add-rating-criterion-panel');
+const addChecklistMathRulePanel = document.getElementById('add-checklist-math-rule-panel');
+const addCustomTagPanel = document.getElementById('add-custom-tag-panel');
 const workerNameSelect = document.getElementById('workerName');
 const quickAddWorkerButton = document.getElementById('quick-add-worker');
 const quickWorkerNameInput = document.getElementById('quick-worker-name');
@@ -410,6 +420,147 @@ const saveAdminSettings = () => {
   localStorage.setItem(ADMIN_SETTINGS_KEY, JSON.stringify(adminSettings));
 };
 
+const normalizeColorHex = (color) => {
+  const value = String(color || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : '#5f8df5';
+};
+
+const loadRecentTagColors = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_TAG_COLORS_KEY) || '[]');
+    return Array.isArray(parsed)
+      ? [...new Set(parsed.map(normalizeColorHex))].slice(0, 8)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveRecentTagColor = (color) => {
+  const normalized = normalizeColorHex(color);
+  const updated = [
+    normalized,
+    ...loadRecentTagColors().filter((entry) => entry !== normalized),
+  ].slice(0, 8);
+  localStorage.setItem(RECENT_TAG_COLORS_KEY, JSON.stringify(updated));
+};
+
+const renderRecentTagColors = () => {
+  if (!customTagRecentColors) return;
+  const colors = loadRecentTagColors();
+  customTagRecentColors.innerHTML = '';
+  if (!colors.length) {
+    customTagRecentColors.innerHTML = '<span class="hint">No recent colors yet.</span>';
+    return;
+  }
+
+  colors.forEach((color) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'recent-color-chip';
+    button.setAttribute('data-recent-tag-color', color);
+    button.title = color;
+    button.style.background = color;
+    button.setAttribute('aria-label', `Use recent color ${color}`);
+    customTagRecentColors.appendChild(button);
+  });
+};
+
+const findCriterionByName = (name) => ratingCriteria.find((criterion) => criterion.name.toLowerCase() === String(name || '').trim().toLowerCase());
+
+const resolveLabelScore = (criterion, labelOrScore) => {
+  const cleaned = String(labelOrScore || '').trim();
+  if (!cleaned) return '';
+  if (Object.prototype.hasOwnProperty.call(criterion.labels || {}, cleaned)) return cleaned;
+
+  const lower = cleaned.toLowerCase();
+  const labelEntry = Object.entries(criterion.labels || {})
+    .find(([, label]) => String(label || '').trim().toLowerCase() === lower);
+  return labelEntry?.[0] || '';
+};
+
+const ensureTagExists = (label, color = '#5f8df5') => {
+  const trimmed = String(label || '').trim();
+  if (!trimmed) return false;
+
+  const tags = normalizeCustomTags(adminSettings.customTags);
+  if (tags.some((tag) => tag.label.toLowerCase() === trimmed.toLowerCase())) return false;
+
+  adminSettings.customTags = [
+    ...tags,
+    { id: crypto.randomUUID(), label: trimmed, color: normalizeColorHex(color), locked: false },
+  ];
+  return true;
+};
+
+const parseBulkTags = (rawText) => {
+  const lines = String(rawText || '').split('\n');
+  let added = 0;
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+
+    const [namePart, colorPart] = trimmed.split('|').map((part) => String(part || '').trim());
+    if (!namePart) return;
+
+    const wasAdded = ensureTagExists(namePart, colorPart || '#5f8df5');
+    if (wasAdded) {
+      added += 1;
+      if (colorPart) saveRecentTagColor(colorPart);
+    }
+  });
+
+  return added;
+};
+
+const parseBulkChecklistRules = (rawText) => {
+  const lines = String(rawText || '').split('\n');
+  let added = 0;
+  let skipped = 0;
+
+  const existingRules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+
+    const [criterionName, labelRaw, reportsRange = '', weightRaw = '1', tag = '', insight = ''] = trimmed
+      .split('|')
+      .map((part) => String(part || '').trim());
+
+    const criterion = findCriterionByName(criterionName);
+    if (!criterion) {
+      skipped += 1;
+      return;
+    }
+
+    const labelScore = resolveLabelScore(criterion, labelRaw);
+    const weightMultiplier = Number(weightRaw || 1);
+
+    if (!labelScore || !Number.isFinite(weightMultiplier) || weightMultiplier < 0) {
+      skipped += 1;
+      return;
+    }
+
+    if (tag) ensureTagExists(tag);
+
+    existingRules.push({
+      id: crypto.randomUUID(),
+      criterionId: criterion.id,
+      labelScore,
+      reportsRange,
+      weightMultiplier,
+      tag,
+      insight,
+    });
+    added += 1;
+  });
+
+  adminSettings.checklistMathRules = existingRules;
+  return { added, skipped };
+};
+
 const defaultRatingCriteria = () => ([
   {
     id: crypto.randomUUID(),
@@ -736,6 +887,119 @@ const renderWorkerNameOptions = (profiles) => {
   }
 };
 
+
+const parseChecklistEntries = (noteText) => {
+  const note = String(noteText || '');
+  const match = note.match(/Checklist:\s*([^|]+)/);
+  if (!match) return [];
+
+  return match[1]
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const withoutScores = entry.replace(/\s*\(base:.*\)\s*$/, '').trim();
+      const separator = withoutScores.indexOf('=');
+      if (separator < 0) return null;
+
+      return {
+        criterion: withoutScores.slice(0, separator).trim(),
+        label: withoutScores.slice(separator + 1).trim(),
+      };
+    })
+    .filter(Boolean);
+};
+
+const parseReportsRangeToken = (token) => {
+  const value = String(token || '').trim();
+  if (!value) return null;
+
+  if (/^-?\d+$/.test(value)) {
+    const exact = Number(value);
+    return Number.isFinite(exact) ? { type: 'exact', exact } : null;
+  }
+
+  const plusMatch = value.match(/^(\d+)\+$/);
+  if (plusMatch) {
+    return { type: 'min', min: Number(plusMatch[1]) };
+  }
+
+  const rangeMatch = value.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (rangeMatch) {
+    const min = Number(rangeMatch[1]);
+    const max = Number(rangeMatch[2]);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    return { type: 'range', min: Math.min(min, max), max: Math.max(min, max) };
+  }
+
+  return null;
+};
+
+const matchesReportsRange = (count, reportsRange) => {
+  const normalizedCount = Number(count || 0);
+  if (!reportsRange) return true;
+
+  const tokens = String(reportsRange)
+    .split(',')
+    .map((entry) => parseReportsRangeToken(entry))
+    .filter(Boolean);
+
+  if (!tokens.length) return true;
+
+  return tokens.some((token) => {
+    if (token.type === 'exact') return normalizedCount === token.exact;
+    if (token.type === 'min') return normalizedCount >= token.min;
+    if (token.type === 'range') return normalizedCount >= token.min && normalizedCount <= token.max;
+    return false;
+  });
+};
+
+const computeChecklistSignals = (ratings) => {
+  const reportCounts = new Map();
+
+  ratings.forEach((rating) => {
+    parseChecklistEntries(rating.note).forEach((entry) => {
+      const key = `${entry.criterion.toLowerCase()}::${entry.label.toLowerCase()}`;
+      reportCounts.set(key, Number(reportCounts.get(key) || 0) + 1);
+    });
+  });
+
+  const rules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
+  const tags = normalizeCustomTags(adminSettings.customTags);
+
+  const activeTags = [];
+  const insights = [];
+
+  rules.forEach((rule) => {
+    const criterion = ratingCriteria.find((item) => item.id === rule.criterionId);
+    const criterionName = String(criterion?.name || '').trim();
+    const labelText = String(criterion?.labels?.[rule.labelScore] || '').trim();
+    if (!criterionName || !labelText) return;
+
+    const key = `${criterionName.toLowerCase()}::${labelText.toLowerCase()}`;
+    const count = Number(reportCounts.get(key) || 0);
+
+    if (!matchesReportsRange(count, rule.reportsRange)) return;
+
+    if (rule.tag) {
+      const matchingTag = tags.find((tag) => tag.label === rule.tag);
+      activeTags.push({
+        label: rule.tag,
+        color: matchingTag?.color || '#eef1fb',
+      });
+    }
+
+    if (rule.insight) {
+      insights.push(rule.insight);
+    }
+  });
+
+  const uniqueTags = [...new Map(activeTags.map((tag) => [tag.label.toLowerCase(), tag])).values()];
+  const uniqueInsights = [...new Set(insights.map((entry) => entry.trim()).filter(Boolean))];
+
+  return { tags: uniqueTags, insights: uniqueInsights };
+};
+
 const renderWorkerProfile = (profiles, workerId) => {
   if (!workerId) {
     workerProfileDetail.innerHTML = '<p class="hint">Choose a worker to inspect category-level rating history and trends.</p>';
@@ -754,6 +1018,7 @@ const renderWorkerProfile = (profiles, workerId) => {
   const totalReviews = ratings.length;
   const overallScore = Number(profile.overallScore || 0).toFixed(2);
   const analytics = profile.analytics || computeProfileAnalytics(ratings);
+  const checklistSignals = computeChecklistSignals(ratings);
 
   const topJobTypeText = topJobTypes.length
     ? topJobTypes.map((entry) => `${entry.jobType} (${entry.average})`).join(' · ')
@@ -801,6 +1066,15 @@ const renderWorkerProfile = (profiles, workerId) => {
         <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
+      <div class="meta">
+        <span>Issue tags:</span>
+        ${checklistSignals.tags.length
+    ? checklistSignals.tags.map((tag) => `<span class="badge custom-tag-preview" style="background:${tag.color}; color:#1f2330;">${tag.label}</span>`).join(' ')
+    : '<span class="hint">No issue tags triggered yet.</span>'}
+      </div>
+      ${checklistSignals.insights.length
+    ? `<p class="hint">Insights: ${checklistSignals.insights.join(' • ')}</p>`
+    : ''}
     </div>
 
     <article class="category-history">
@@ -917,7 +1191,7 @@ const renderChecklistMathRules = () => {
     row.className = 'problem-row';
     row.innerHTML = `
       <span><strong>${criterionName}</strong> → ${labelText} | Reports: ${rangeText} | Weight x${rule.weightMultiplier}${tagText}${insightText}</span>
-      <button type="button" class="secondary" data-delete-checklist-math-rule="${rule.id}">Delete</button>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-checklist-math-rule="${rule.id}">Edit</button><button type="button" class="secondary" data-delete-checklist-math-rule="${rule.id}">Delete</button></div>
     `;
     checklistMathRulesList.appendChild(row);
   });
@@ -949,7 +1223,7 @@ const renderCustomTags = () => {
     row.className = 'problem-row';
     row.innerHTML = `
       <span><span class="badge custom-tag-preview" style="background:${tag.color}; color:#1f2330;">${tag.label}</span>${tag.locked ? ' (default)' : ''}</span>
-      ${tag.locked ? '<span class="hint">Locked</span>' : `<button type="button" class="secondary" data-delete-custom-tag="${tag.id}">Delete</button>`}
+      <div class="row-actions"><button type="button" class="secondary" data-edit-custom-tag="${tag.id}">Edit</button>${tag.locked ? '<span class="hint">Locked</span>' : `<button type="button" class="secondary" data-delete-custom-tag="${tag.id}">Delete</button>`}</div>
     `;
     customTagsList.appendChild(row);
   });
@@ -976,13 +1250,14 @@ const renderAdminSettings = () => {
     row.className = 'problem-row';
     row.innerHTML = `
       <span><strong>${jobType}</strong></span>
-      <button type="button" class="secondary" data-delete-job-type="${jobType}">Delete</button>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-job-type="${jobType}">Edit</button><button type="button" class="secondary" data-delete-job-type="${jobType}">Delete</button></div>
     `;
     jobTypesList.appendChild(row);
   });
 
   renderCustomTagOptions();
   renderCustomTags();
+  renderRecentTagColors();
   renderChecklistMathBuilderOptions();
   renderChecklistMathRules();
   renderJobTypeOptions();
@@ -1018,7 +1293,7 @@ const renderRatingCriteriaRows = () => {
     row.className = 'problem-row';
     row.innerHTML = `
       <span><strong>${criterion.name}</strong> — ${criterion.labels['-5']} (w:${criterion.weights?.['-5'] ?? -5}) | ${criterion.labels['-2.5']} (w:${criterion.weights?.['-2.5'] ?? -2.5}) | ${criterion.labels['0']} (w:${criterion.weights?.['0'] ?? 0}) | ${criterion.labels['2.5']} (w:${criterion.weights?.['2.5'] ?? 2.5}) | ${criterion.labels['5']} (w:${criterion.weights?.['5'] ?? 5})</span>
-      <button type="button" class="secondary" data-delete-criterion="${criterion.id}">Delete</button>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-criterion="${criterion.id}">Edit</button><button type="button" class="secondary" data-delete-criterion="${criterion.id}">Delete</button></div>
     `;
     ratingCriteriaList.appendChild(row);
   });
@@ -1055,6 +1330,7 @@ const renderAll = (profiles) => {
   renderRatingCriteriaRows();
   renderCustomTagOptions();
   renderCustomTags();
+  renderRecentTagColors();
   renderChecklistMathBuilderOptions();
   renderChecklistMathRules();
 };
@@ -1355,20 +1631,31 @@ const showAdminPage = (show) => {
 };
 
 
+
+const ensurePanelOpen = (panel, focusField) => {
+  if (!panel || !panel.classList.contains('hidden')) return true;
+  panel.classList.remove('hidden');
+  if (focusField instanceof HTMLElement) {
+    focusField.focus();
+  }
+  return false;
+};
+
 const setupAdminSectionToggles = () => {
   document.querySelectorAll('#admin-settings-form .admin-section').forEach((section, index) => {
     const legend = section.querySelector('legend');
     if (!legend || legend.querySelector('[data-admin-section-toggle]')) return;
 
-    section.classList.add('is-open');
+    section.classList.remove('is-open');
+    section.classList.add('is-collapsed');
     section.setAttribute('data-admin-section-index', String(index + 1));
 
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'admin-section-toggle';
     toggle.setAttribute('data-admin-section-toggle', 'true');
-    toggle.setAttribute('aria-expanded', 'true');
-    toggle.textContent = 'Collapse';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = 'Expand';
 
     toggle.addEventListener('click', () => {
       const isOpen = section.classList.toggle('is-open');
@@ -1465,12 +1752,15 @@ if (tabAdmin) {
 if (addJobTypeButton) {
   addJobTypeButton.addEventListener('click', () => {
     const nameField = document.getElementById('job-type-name');
+    if (!ensurePanelOpen(addJobTypePanel, nameField)) return;
+
     const name = nameField.value.trim();
     if (!name) return;
     if ((adminSettings.jobTypes || []).some((jobType) => jobType.toLowerCase() == name.toLowerCase())) return;
 
     adminSettings.jobTypes.push(name);
     nameField.value = '';
+    addJobTypePanel?.classList.add('hidden');
     persistAdminSettings({ rerenderAdmin: true });
   });
 }
@@ -1479,6 +1769,18 @@ if (jobTypesList) {
   jobTypesList.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    const jobTypeToEdit = target.getAttribute('data-edit-job-type');
+    if (jobTypeToEdit) {
+      const updatedName = window.prompt('Edit job type:', jobTypeToEdit);
+      if (updatedName === null) return;
+      const trimmed = updatedName.trim();
+      if (!trimmed) return;
+      if ((adminSettings.jobTypes || []).some((entry) => entry.toLowerCase() === trimmed.toLowerCase() && entry !== jobTypeToEdit)) return;
+      adminSettings.jobTypes = (adminSettings.jobTypes || []).map((entry) => (entry === jobTypeToEdit ? trimmed : entry));
+      persistAdminSettings({ rerenderAdmin: true });
+      return;
+    }
 
     const jobType = target.getAttribute('data-delete-job-type');
     if (!jobType) return;
@@ -1546,7 +1848,10 @@ if (criteriaRatingsContainer) {
 
 if (addRatingCriterionButton) {
   addRatingCriterionButton.addEventListener('click', () => {
-    const name = document.getElementById('criterion-name').value.trim();
+    const criterionNameInput = document.getElementById('criterion-name');
+    if (!ensurePanelOpen(addRatingCriterionPanel, criterionNameInput)) return;
+
+    const name = criterionNameInput.value.trim();
     const veryBad = document.getElementById('criterion-very-bad').value.trim();
     const littleBad = document.getElementById('criterion-little-bad').value.trim();
     const neutral = document.getElementById('criterion-neutral').value.trim();
@@ -1589,6 +1894,7 @@ if (addRatingCriterionButton) {
     document.getElementById('criterion-weight-little-good').value = '2.5';
     document.getElementById('criterion-weight-very-good').value = '5';
 
+    addRatingCriterionPanel?.classList.add('hidden');
     saveRatingCriteria();
     renderRatingCriteriaRows();
     renderCriterionRatings();
@@ -1599,6 +1905,41 @@ if (ratingCriteriaList) {
   ratingCriteriaList.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    const criterionIdToEdit = target.getAttribute('data-edit-criterion');
+    if (criterionIdToEdit) {
+      const criterion = ratingCriteria.find((entry) => entry.id === criterionIdToEdit);
+      if (!criterion) return;
+
+      const nextName = window.prompt('Checklist item name:', criterion.name);
+      if (nextName === null) return;
+      const name = nextName.trim();
+      if (!name) return;
+
+      const labels = { ...criterion.labels };
+      for (const scoreKey of ['-5', '-2.5', '0', '2.5', '5']) {
+        const nextLabel = window.prompt(`Label for ${scoreKey}:`, labels[scoreKey] || '');
+        if (nextLabel === null) return;
+        labels[scoreKey] = nextLabel.trim() || labels[scoreKey] || '';
+      }
+
+      const weights = { ...criterion.weights };
+      for (const scoreKey of ['-5', '-2.5', '0', '2.5', '5']) {
+        const nextWeightRaw = window.prompt(`Weight for ${scoreKey}:`, String(weights[scoreKey] ?? scoreKey));
+        if (nextWeightRaw === null) return;
+        const nextWeight = Number(nextWeightRaw);
+        if (Number.isNaN(nextWeight)) return;
+        weights[scoreKey] = nextWeight;
+      }
+
+      ratingCriteria = ratingCriteria.map((entry) => (entry.id === criterionIdToEdit ? { ...entry, name, labels, weights } : entry));
+      saveRatingCriteria();
+      renderRatingCriteriaRows();
+      renderCriterionRatings();
+      renderChecklistMathBuilderOptions();
+      renderChecklistMathRules();
+      return;
+    }
 
     const criterionId = target.getAttribute('data-delete-criterion');
     if (!criterionId) return;
@@ -1613,8 +1954,10 @@ if (ratingCriteriaList) {
 
 if (addCustomTagButton) {
   addCustomTagButton.addEventListener('click', () => {
+    if (!ensurePanelOpen(addCustomTagPanel, customTagNameInput)) return;
+
     const label = String(customTagNameInput?.value || '').trim();
-    const color = String(customTagColorInput?.value || '#5f8df5').trim();
+    const color = normalizeColorHex(customTagColorInput?.value || '#5f8df5');
     if (!label) return;
 
     const tags = normalizeCustomTags(adminSettings.customTags);
@@ -1627,6 +1970,8 @@ if (addCustomTagButton) {
 
     if (customTagNameInput) customTagNameInput.value = '';
     if (customTagColorInput) customTagColorInput.value = '#5f8df5';
+    saveRecentTagColor(color);
+    addCustomTagPanel?.classList.add('hidden');
     persistAdminSettings({ rerenderAdmin: true });
   });
 }
@@ -1635,12 +1980,78 @@ if (customTagsList) {
   customTagsList.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    const editTagId = target.getAttribute('data-edit-custom-tag');
+    if (editTagId) {
+      const tags = normalizeCustomTags(adminSettings.customTags);
+      const selectedTag = tags.find((tag) => tag.id === editTagId);
+      if (!selectedTag) return;
+
+      const nextLabelRaw = selectedTag.locked
+        ? selectedTag.label
+        : window.prompt('Edit tag name:', selectedTag.label);
+      if (nextLabelRaw === null) return;
+      const nextLabel = String(nextLabelRaw).trim();
+      if (!nextLabel) return;
+
+      const nextColorRaw = window.prompt('Edit tag color (hex like #5f8df5):', selectedTag.color || '#5f8df5');
+      if (nextColorRaw === null) return;
+      const nextColor = normalizeColorHex(nextColorRaw);
+      saveRecentTagColor(nextColor);
+
+      adminSettings.customTags = tags.map((tag) => {
+        if (tag.id !== editTagId) return tag;
+        if (tag.locked) return { ...tag, color: nextColor };
+        return { ...tag, label: nextLabel, color: nextColor };
+      });
+      persistAdminSettings({ rerenderAdmin: true });
+      return;
+    }
+
     const tagId = target.getAttribute('data-delete-custom-tag');
     if (!tagId) return;
 
     adminSettings.customTags = normalizeCustomTags(adminSettings.customTags)
       .filter((tag) => tag.id !== tagId || tag.locked);
     persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+if (customTagColorInput) {
+  customTagColorInput.addEventListener('change', () => {
+    saveRecentTagColor(customTagColorInput.value);
+    renderRecentTagColors();
+  });
+}
+
+if (customTagRecentColors) {
+  customTagRecentColors.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const color = target.getAttribute('data-recent-tag-color');
+    if (!color || !customTagColorInput) return;
+    customTagColorInput.value = color;
+    saveRecentTagColor(color);
+    renderRecentTagColors();
+  });
+}
+
+
+if (applyBulkTagsButton) {
+  applyBulkTagsButton.addEventListener('click', () => {
+    const added = parseBulkTags(bulkTagsInput?.value || '');
+    if (bulkTagsInput) bulkTagsInput.value = '';
+    persistAdminSettings({ rerenderAdmin: true });
+    alert(`Quick tag setup complete. Added ${added} tag(s).`);
+  });
+}
+
+if (applyBulkChecklistRulesButton) {
+  applyBulkChecklistRulesButton.addEventListener('click', () => {
+    const { added, skipped } = parseBulkChecklistRules(bulkChecklistRulesInput?.value || '');
+    if (bulkChecklistRulesInput) bulkChecklistRulesInput.value = '';
+    persistAdminSettings({ rerenderAdmin: true });
+    alert(`Quick checklist setup complete. Added ${added} rule(s), skipped ${skipped}.`);
   });
 }
 
@@ -1666,6 +2077,8 @@ if (mathMainCriterionSelect) {
 
 if (addChecklistMathRuleButton) {
   addChecklistMathRuleButton.addEventListener('click', () => {
+    if (!ensurePanelOpen(addChecklistMathRulePanel, mathMainCriterionSelect)) return;
+
     const criterionId = String(mathMainCriterionSelect?.value || '').trim();
     const labelScore = String(mathLabelSelect?.value || '').trim();
     const reportsRange = String(mathReportRangeInput?.value || '').trim();
@@ -1694,6 +2107,7 @@ if (addChecklistMathRuleButton) {
     if (mathTagInput) mathTagInput.value = '';
     if (mathInsightInput) mathInsightInput.value = '';
 
+    addChecklistMathRulePanel?.classList.add('hidden');
     persistAdminSettings({ rerenderAdmin: true });
   });
 }
@@ -1702,6 +2116,38 @@ if (checklistMathRulesList) {
   checklistMathRulesList.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    const editRuleId = target.getAttribute('data-edit-checklist-math-rule');
+    if (editRuleId) {
+      const rules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
+      const selectedRule = rules.find((rule) => rule.id === editRuleId);
+      if (!selectedRule) return;
+
+      const nextRange = window.prompt('Edit reports range:', selectedRule.reportsRange || '');
+      if (nextRange === null) return;
+      const nextWeightRaw = window.prompt('Edit weight multiplier:', String(selectedRule.weightMultiplier));
+      if (nextWeightRaw === null) return;
+      const nextWeight = Number(nextWeightRaw);
+      if (!Number.isFinite(nextWeight) || nextWeight < 0) return;
+      const nextTag = window.prompt('Edit tag (blank for none):', selectedRule.tag || '');
+      if (nextTag === null) return;
+      const nextInsight = window.prompt('Edit insight (blank for none):', selectedRule.insight || '');
+      if (nextInsight === null) return;
+
+      adminSettings.checklistMathRules = rules.map((rule) => (
+        rule.id === editRuleId
+          ? {
+            ...rule,
+            reportsRange: nextRange.trim(),
+            weightMultiplier: nextWeight,
+            tag: nextTag.trim(),
+            insight: nextInsight.trim(),
+          }
+          : rule
+      ));
+      persistAdminSettings({ rerenderAdmin: true });
+      return;
+    }
 
     const ruleId = target.getAttribute('data-delete-checklist-math-rule');
     if (!ruleId) return;
