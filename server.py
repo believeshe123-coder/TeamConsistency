@@ -5,7 +5,7 @@ import math
 import re
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(ROOT_DIR, 'data.sqlite')
@@ -237,6 +237,28 @@ def save_admin_list(connection: sqlite3.Connection, key: str, values: list[str])
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
         ''',
         (key, json.dumps(values)),
+    )
+
+
+def load_admin_value(connection: sqlite3.Connection, key: str):
+    row = connection.execute('SELECT value FROM admin_catalog WHERE key = ?', (key,)).fetchone()
+    if row is None:
+        return None
+
+    try:
+        return json.loads(row['value'])
+    except json.JSONDecodeError:
+        return None
+
+
+def save_admin_value(connection: sqlite3.Connection, key: str, value) -> None:
+    connection.execute(
+        '''
+        INSERT INTO admin_catalog (key, value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        ''',
+        (key, json.dumps(value)),
     )
 
 
@@ -599,6 +621,18 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 )
             return
 
+        if path == '/api/admin/settings':
+            key = parse_qs(parsed.query).get('key', [''])[0].strip()
+            if not key:
+                self._send_json(400, {'message': 'key query parameter is required'})
+                return
+
+            with db_connection() as connection:
+                value = load_admin_value(connection, key)
+
+            self._send_json(200, {'key': key, 'value': value})
+            return
+
         if path == '/api/admin/maintenance-report':
             with db_connection() as connection:
                 duplicates = connection.execute(
@@ -818,6 +852,20 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 save_admin_list(connection, 'criteria_names', normalized_criteria)
 
             self._send_json(200, {'jobTypes': normalized_job_types, 'criteriaNames': normalized_criteria})
+            return
+
+        if path == '/api/admin/settings':
+            payload = self._read_json_body()
+            key = str(payload.get('key', '')).strip()
+            if not key:
+                self._send_json(400, {'message': 'key is required'})
+                return
+
+            value = payload.get('value')
+            with db_connection() as connection:
+                save_admin_value(connection, key, value)
+
+            self._send_json(200, {'key': key, 'value': value})
             return
 
         if path == '/api/profiles/merge':

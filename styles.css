@@ -193,6 +193,32 @@ button.secondary {
   background: linear-gradient(#eef1fb, #ccd3ea);
 }
 
+
+.button-like {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  padding: 3px 6px;
+  border: 1px solid #787f95;
+  min-height: 26px;
+  cursor: pointer;
+}
+
+.button-like.secondary {
+  background: linear-gradient(#eef1fb, #ccd3ea);
+  color: #101422;
+}
+
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .page-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(200px, 1fr));

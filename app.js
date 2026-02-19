@@ -66,6 +66,8 @@ const quickWorkerNameInput = document.getElementById('quick-worker-name');
 const quickWorkerFeedback = document.getElementById('quick-worker-feedback');
 const refreshMaintenanceReportButton = document.getElementById('refresh-maintenance-report');
 const maintenanceReport = document.getElementById('maintenance-report');
+const downloadBrowserBackupButton = document.getElementById('download-browser-backup');
+const restoreBrowserBackupInput = document.getElementById('restore-browser-backup');
 
 let profilesCache = [];
 let ratingRules = [];
@@ -90,6 +92,7 @@ const canonicalWorkerKey = (name, employeeId = '') => {
 };
 const confirmAction = (message = 'Do you really want to clear?') => window.confirm(message);
 const AUTO_SYNC_INTERVAL_MS = 15000;
+const ADMIN_SYNC_KEY = 'settings_bundle_v1';
 
 const DEFAULT_STEADY_TAG = { id: 'steady-default', label: 'Steady', color: '#5f8df5', locked: true };
 
@@ -323,6 +326,65 @@ const updateAdminCatalog = async () => {
   } catch {
     // no-op fallback for offline mode
   }
+};
+
+const pushAdminBundleToBackend = async () => {
+  try {
+    await fetch(`${API_BASE}/admin/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: ADMIN_SYNC_KEY,
+        value: {
+          adminSettings,
+          ratingCriteria,
+          ratingRules,
+          recentTagColors: loadRecentTagColors(),
+        },
+      }),
+    });
+  } catch {
+    // no-op fallback for offline mode
+  }
+};
+
+const pullAdminBundleFromBackend = async () => {
+  const response = await fetch(`${API_BASE}/admin/settings?key=${encodeURIComponent(ADMIN_SYNC_KEY)}`);
+  if (!response.ok) throw new Error('Unable to load shared admin settings');
+  const payload = await response.json();
+  const value = payload?.value;
+  if (!value || typeof value !== 'object') return false;
+
+  adminSettings = {
+    ...loadAdminSettings(),
+    ...(value.adminSettings && typeof value.adminSettings === 'object' ? value.adminSettings : {}),
+    checklistMathRules: normalizeChecklistMathRules(value?.adminSettings?.checklistMathRules),
+    customTags: normalizeCustomTags(value?.adminSettings?.customTags),
+    statusWeights: PROFILE_STATUSES.reduce((acc, status) => {
+      acc[status] = Number(value?.adminSettings?.statusWeights?.[status] || 0);
+      return acc;
+    }, {}),
+    jobTypes: Array.isArray(value?.adminSettings?.jobTypes) && value.adminSettings.jobTypes.length
+      ? value.adminSettings.jobTypes.map((item) => String(item || '').trim()).filter(Boolean)
+      : [...DEFAULT_JOB_TYPES],
+  };
+
+  if (Array.isArray(value.ratingCriteria) && value.ratingCriteria.length) {
+    localStorage.setItem(RATING_CRITERIA_KEY, JSON.stringify(value.ratingCriteria));
+    ratingCriteria = loadRatingCriteria();
+  }
+
+  if (Array.isArray(value.ratingRules)) {
+    ratingRules = value.ratingRules;
+    saveRatingRules();
+  }
+
+  if (Array.isArray(value.recentTagColors)) {
+    localStorage.setItem(RECENT_TAG_COLORS_KEY, JSON.stringify(value.recentTagColors));
+  }
+
+  saveAdminSettings();
+  return true;
 };
 
 const fetchMaintenanceReport = async () => {
@@ -566,6 +628,7 @@ const saveRecentTagColor = (color) => {
     ...loadRecentTagColors().filter((entry) => entry !== normalized),
   ].slice(0, 8);
   localStorage.setItem(RECENT_TAG_COLORS_KEY, JSON.stringify(updated));
+  pushAdminBundleToBackend();
 };
 
 const renderRecentTagColors = () => {
@@ -694,6 +757,7 @@ const loadRatingCriteria = () => {
 const saveRatingCriteria = () => {
   localStorage.setItem(RATING_CRITERIA_KEY, JSON.stringify(ratingCriteria));
   updateAdminCatalog();
+  pushAdminBundleToBackend();
 };
 
 const loadRatingRules = () => {
@@ -716,6 +780,7 @@ const loadRatingRules = () => {
 
 const saveRatingRules = () => {
   localStorage.setItem(RATING_RULES_KEY, JSON.stringify(ratingRules));
+  pushAdminBundleToBackend();
 };
 
 const getKnownCategories = () => {
@@ -1339,6 +1404,7 @@ const syncStatusWeightsFromInputs = () => {
 const persistAdminSettings = ({ rerenderAdmin = false } = {}) => {
   saveAdminSettings();
   updateAdminCatalog();
+  pushAdminBundleToBackend();
   if (rerenderAdmin) {
     renderAdminSettings();
   }
@@ -2524,6 +2590,94 @@ clearButton.addEventListener('click', async () => {
   }
 });
 
+
+const buildBrowserBackupPayload = () => ({
+  version: 1,
+  exportedAt: nowIso(),
+  data: {
+    profiles: loadLocalProfiles(),
+    adminSettings,
+    ratingCriteria,
+    ratingRules,
+    recentTagColors: loadRecentTagColors(),
+  },
+});
+
+const downloadBrowserBackup = () => {
+  const payload = buildBrowserBackupPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  link.href = url;
+  link.download = `worker-ratings-backup-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const restoreBrowserBackup = async (file) => {
+  const raw = await file.text();
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || !parsed.data) {
+    throw new Error('Backup file format is invalid.');
+  }
+
+  const backup = parsed.data;
+  if (Array.isArray(backup.profiles)) {
+    saveLocalProfiles(backup.profiles);
+  }
+  if (backup.adminSettings && typeof backup.adminSettings === 'object') {
+    adminSettings = {
+      ...adminSettings,
+      ...backup.adminSettings,
+      checklistMathRules: normalizeChecklistMathRules(backup.adminSettings.checklistMathRules),
+      customTags: normalizeCustomTags(backup.adminSettings.customTags),
+    };
+    saveAdminSettings();
+  }
+  if (Array.isArray(backup.ratingCriteria)) {
+    localStorage.setItem(RATING_CRITERIA_KEY, JSON.stringify(backup.ratingCriteria));
+    ratingCriteria = loadRatingCriteria();
+  }
+  if (Array.isArray(backup.ratingRules)) {
+    ratingRules = backup.ratingRules;
+    localStorage.setItem(RATING_RULES_KEY, JSON.stringify(backup.ratingRules));
+  }
+  if (Array.isArray(backup.recentTagColors)) {
+    localStorage.setItem(RECENT_TAG_COLORS_KEY, JSON.stringify(backup.recentTagColors));
+  }
+
+  await pushAdminBundleToBackend();
+  renderAdminSettings();
+  renderRules();
+  renderCriterionRatings();
+  await refreshFromBackend();
+};
+
+if (downloadBrowserBackupButton) {
+  downloadBrowserBackupButton.addEventListener('click', () => {
+    downloadBrowserBackup();
+  });
+}
+
+if (restoreBrowserBackupInput) {
+  restoreBrowserBackupInput.addEventListener('change', async (event) => {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+
+    try {
+      await restoreBrowserBackup(file);
+      alert('Backup restored. Shared settings were synced.');
+    } catch (error) {
+      alert(error.message || 'Unable to restore backup file.');
+    } finally {
+      restoreBrowserBackupInput.value = '';
+    }
+  });
+}
+
 window.addEventListener('popstate', () => {
   const hash = window.location.hash;
   if (hash === '#admin-settings') {
@@ -2549,6 +2703,15 @@ setupAdminSectionToggles();
 resetHistoryEntries();
 resetNoteEntries();
 setDataSyncStatus('Data sync: loading latest backend changes...');
+pullAdminBundleFromBackend().then((didSync) => {
+  if (didSync) {
+    renderAdminSettings();
+    renderRules();
+    renderCriterionRatings();
+  }
+}).catch(() => {
+  // keep local state if shared settings cannot be loaded
+});
 if (window.location.hash === '#admin-settings') {
   showAdminPage(true);
 } else {
