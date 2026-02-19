@@ -31,6 +31,11 @@
               </label>
 
               <label>
+                <span class="label-text">Employee ID (optional)</span>
+                <input id="workerEmployeeId" name="externalEmployeeId" type="text" placeholder="EMP-1042" />
+              </label>
+
+              <label>
                 <span class="label-text">Job type <span class="required-indicator" aria-hidden="true">*</span></span>
                 <select id="job-type" name="jobType" required aria-describedby="job-type-error"></select>
                 <span id="job-type-error" class="field-error">Select a job type before saving.</span>
@@ -93,6 +98,11 @@
                 <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
                 <input id="profileName" name="name" type="text" required minlength="2" placeholder="Jordan Patel" aria-describedby="profile-name-error" />
                 <span id="profile-name-error" class="field-error">Worker name must be at least 2 characters.</span>
+              </label>
+
+              <label>
+                <span class="label-text">Employee ID (optional)</span>
+                <input id="profileEmployeeId" name="externalEmployeeId" type="text" placeholder="EMP-1042" />
               </label>
 
               <label>
@@ -270,13 +280,6 @@
               <div class="section-actions">
                 <button type="button" id="add-checklist-math-rule" class="secondary">Add tag + tab rule</button>
               </div>
-              <div class="bulk-setup-block">
-                <p class="hint">Quick setup: paste one rule per line as <code>Checklist item | Label text (or score) | Reports | Weight | Tag | Insight</code>.</p>
-                <textarea id="bulk-checklist-rules" rows="5" placeholder="Punctuality | Extremely late / No call | 1 | 1 | One NCNS/Very Late |"></textarea>
-                <div class="section-actions admin-inline-actions">
-                  <button type="button" id="apply-bulk-checklist-rules" class="secondary">Apply quick checklist setup</button>
-                </div>
-              </div>
             </fieldset>
 
 
@@ -304,13 +307,16 @@
               <div class="section-actions admin-inline-actions">
                 <button type="button" id="add-custom-tag" class="secondary">Add tag</button>
               </div>
-              <div class="bulk-setup-block">
-                <p class="hint">Quick setup: add one tag per line (or <code>Tag name | #hexcolor</code>).</p>
-                <textarea id="bulk-tags" rows="4" placeholder="Terminate | #ff0000&#10;One NCNS/Very Late | #d8d84a"></textarea>
-                <div class="section-actions admin-inline-actions">
-                  <button type="button" id="apply-bulk-tags" class="secondary">Apply quick tags setup</button>
-                </div>
+            </fieldset>
+
+
+            <fieldset class="history-fieldset admin-section">
+              <legend>Maintenance report</legend>
+              <p class="hint">Find likely duplicate workers and orphaned records as data grows.</p>
+              <div class="section-actions admin-inline-actions">
+                <button type="button" id="refresh-maintenance-report" class="secondary">Refresh report</button>
               </div>
+              <div id="maintenance-report" class="history-list"><p class="hint">Run report to view results.</p></div>
             </fieldset>
 
             <fieldset class="history-fieldset admin-section">
