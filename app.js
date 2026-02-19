@@ -61,17 +61,74 @@ const saveLocalProfiles = (profiles) => {
   localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
 };
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const toFivePointScale = (rawScore) => Number((((clamp(Number(rawScore) || 0, -5, 5) + 5) / 2)).toFixed(2));
+const isPunctualityCategory = (category) => ['punctuality', 'attendance', 'timeliness', 'late'].some((token) => String(category || '').toLowerCase().includes(token));
+
+const computeProfileAnalytics = (ratings) => {
+  if (!ratings.length) {
+    return {
+      normalizedOverallScore: 0,
+      consistencyScore: 0,
+      currentPositiveStreak: 0,
+      bestPositiveStreak: 0,
+      lateTrendWeightApplied: false,
+      lateTrend: 'No punctuality trend yet',
+    };
+  }
+
+  const sorted = [...ratings].sort((a, b) => new Date(a.ratedAt).getTime() - new Date(b.ratedAt).getTime());
+  const punctualityRatings = sorted.filter((entry) => isPunctualityCategory(entry.category));
+  const recentPunctuality = punctualityRatings.slice(-3);
+  const lateTrendWeightApplied = recentPunctuality.length === 3 && recentPunctuality.every((entry) => Number(entry.score) <= 0);
+
+  const normalizedScores = [];
+  let currentPositiveStreak = 0;
+  let bestPositiveStreak = 0;
+
+  const weightedTotal = sorted.reduce((sum, entry) => {
+    const normalizedScore = toFivePointScale(entry.score);
+    normalizedScores.push(normalizedScore);
+
+    if (normalizedScore >= 3.5) {
+      currentPositiveStreak += 1;
+      bestPositiveStreak = Math.max(bestPositiveStreak, currentPositiveStreak);
+    } else {
+      currentPositiveStreak = 0;
+    }
+
+    const multiplier = lateTrendWeightApplied && isPunctualityCategory(entry.category) ? 2 : 1;
+    return sum + (Number(entry.score || 0) * multiplier);
+  }, 0);
+
+  const weightedAverage = weightedTotal / sorted.length;
+  const streakBonus = Math.min(0.5, currentPositiveStreak * 0.1);
+  const normalizedOverallScore = Number(clamp(toFivePointScale(weightedAverage) + streakBonus, 0, 5).toFixed(2));
+
+  const mean = normalizedScores.reduce((sum, score) => sum + score, 0) / normalizedScores.length;
+  const variance = normalizedScores.reduce((sum, score) => sum + ((score - mean) ** 2), 0) / normalizedScores.length;
+  const consistencyScore = Number(clamp(100 - (Math.sqrt(variance) * 20), 0, 100).toFixed(2));
+
+  return {
+    normalizedOverallScore,
+    consistencyScore,
+    currentPositiveStreak,
+    bestPositiveStreak,
+    lateTrendWeightApplied,
+    lateTrend: lateTrendWeightApplied ? 'Always late trend detected; punctuality scores are doubled' : (recentPunctuality.length ? 'Punctuality is being monitored' : 'No punctuality trend yet'),
+  };
+};
+
 const recalculateProfileFields = (profile) => {
   const ratings = Array.isArray(profile.ratings) ? profile.ratings : [];
   const jobCategories = [...new Set(ratings.map((entry) => entry.category).filter(Boolean))];
-  const overallScore = ratings.length
-    ? Number((ratings.reduce((total, entry) => total + Number(entry.score || 0), 0) / ratings.length).toFixed(2))
-    : 0;
+  const analytics = computeProfileAnalytics(ratings);
 
   return {
     ...profile,
     jobCategories,
-    overallScore,
+    overallScore: analytics.normalizedOverallScore,
+    analytics,
   };
 };
 
@@ -105,8 +162,8 @@ const upsertLocalProfile = (incomingProfile) => {
 };
 
 const statusFromScore = (score) => {
-  if (score >= 2.5) return 'top-performer';
-  if (score <= -2.5) return 'at-risk';
+  if (score >= 4) return 'top-performer';
+  if (score <= 2) return 'at-risk';
   return 'steady';
 };
 
@@ -507,7 +564,7 @@ const renderProfiles = (profiles) => {
         <span>Status: ${profile.profileStatus || '—'}</span>
         <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
         <span>Ratings: ${profile.ratings.length}</span>
-        <span>Avg score: ${profile.overallScore}</span>
+        <span>Avg score (0-5): ${profile.overallScore}</span>
         <span>Rank score: ${rankScore}</span>
         <span>Status weight: ${statusWeight}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
@@ -581,6 +638,7 @@ const renderWorkerProfile = (profiles, workerId) => {
   const topJobTypes = jobTypeSummary.slice(0, 3);
   const totalReviews = ratings.length;
   const overallScore = Number(profile.overallScore || 0).toFixed(2);
+  const analytics = profile.analytics || computeProfileAnalytics(ratings);
 
   const topJobTypeText = topJobTypes.length
     ? topJobTypes.map((entry) => `${entry.jobType} (${entry.average})`).join(' · ')
@@ -610,7 +668,7 @@ const renderWorkerProfile = (profiles, workerId) => {
       <h3>${profile.name}</h3>
       <div class="profile-score-cards">
         <article class="profile-score-card">
-          <p class="hint">Overall rating</p>
+          <p class="hint">Overall rating (0-5)</p>
           <strong>${overallScore}</strong>
         </article>
         <article class="profile-score-card">
@@ -624,6 +682,9 @@ const renderWorkerProfile = (profiles, workerId) => {
       </div>
       <div class="meta">
         <span>Status: ${profile.profileStatus || '—'}</span>
+        <span>Consistency: ${Number(analytics.consistencyScore || 0).toFixed(1)}%</span>
+        <span>Positive streak: ${analytics.currentPositiveStreak || 0}</span>
+        <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
     </div>
