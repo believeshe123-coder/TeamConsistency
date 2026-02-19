@@ -16,23 +16,23 @@ const profileHistoryList = document.getElementById('profile-history-list');
 const profileNotesList = document.getElementById('profile-notes-list');
 const profilesList = document.getElementById('profiles');
 const clearButton = document.getElementById('clear-data');
-const categorySelect = document.getElementById('category');
+const jobTypeSelect = document.getElementById('job-type');
 const workerSelector = document.getElementById('worker-selector');
 const workerProfileDetail = document.getElementById('worker-profile-detail');
 const rulesForm = document.getElementById('rating-rules-form');
 const rulesList = document.getElementById('rating-rules-list');
 const ruleSelect = document.getElementById('rating-rule-select');
-const applyRuleButton = document.getElementById('apply-rating-rule');
 const mainPage = document.getElementById('main-page');
 const profilePage = document.getElementById('profile-page');
 const adminPage = document.getElementById('admin-page');
 const tabRatings = document.getElementById('tab-ratings');
 const tabAdmin = document.getElementById('tab-admin');
-const commonProblemSelect = document.getElementById('common-problem-select');
 const adminSettingsForm = document.getElementById('admin-settings-form');
 const statusWeightsContainer = document.getElementById('status-weights');
 const commonProblemsList = document.getElementById('common-problems-list');
 const addCommonProblemButton = document.getElementById('add-common-problem');
+const jobTypesList = document.getElementById('job-types-list');
+const addJobTypeButton = document.getElementById('add-job-type');
 const criteriaRatingsContainer = document.getElementById('criterion-ratings');
 const ratingCriteriaList = document.getElementById('rating-criteria-list');
 const addRatingCriterionButton = document.getElementById('add-rating-criterion');
@@ -40,7 +40,7 @@ const workerNameOptions = document.getElementById('worker-name-options');
 
 let profilesCache = [];
 let ratingRules = [];
-let adminSettings = { statusWeights: {}, commonProblems: [] };
+let adminSettings = { statusWeights: {}, commonProblems: [], jobTypes: [] };
 let ratingCriteria = [];
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
@@ -232,6 +232,8 @@ const clearProfiles = async () => {
   }
 };
 
+const DEFAULT_JOB_TYPES = ['Loading dock', 'Warehouse', 'Picker'];
+
 const loadAdminSettings = () => {
   try {
     const parsed = JSON.parse(localStorage.getItem(ADMIN_SETTINGS_KEY) || '{}');
@@ -246,11 +248,16 @@ const loadAdminSettings = () => {
           .map((item) => ({ id: String(item.id || crypto.randomUUID()), name: String(item.name).trim(), weight: Number(item.weight || 0) }))
       : [];
 
-    return { statusWeights, commonProblems };
+    const jobTypes = Array.isArray(parsed?.jobTypes)
+      ? [...new Set(parsed.jobTypes.map((item) => String(item || '').trim()).filter(Boolean))]
+      : [...DEFAULT_JOB_TYPES];
+
+    return { statusWeights, commonProblems, jobTypes: jobTypes.length ? jobTypes : [...DEFAULT_JOB_TYPES] };
   } catch {
     return {
       statusWeights: PROFILE_STATUSES.reduce((acc, status) => ({ ...acc, [status]: 0 }), {}),
       commonProblems: [],
+      jobTypes: [...DEFAULT_JOB_TYPES],
     };
   }
 };
@@ -523,21 +530,26 @@ const renderWorkerProfile = (profiles, workerId) => {
   `;
 };
 
-const renderCommonProblemSelect = () => {
-  if (!commonProblemSelect) return;
+const renderJobTypeOptions = () => {
+  if (!jobTypeSelect) return;
 
-  commonProblemSelect.innerHTML = '<option value="">No quick pick selected</option>';
+  const previous = jobTypeSelect.value;
+  jobTypeSelect.innerHTML = '<option value="">Select a job type</option>';
 
-  (adminSettings.commonProblems || []).forEach((problem) => {
+  (adminSettings.jobTypes || []).forEach((jobType) => {
     const option = document.createElement('option');
-    option.value = problem.id;
-    option.textContent = `${problem.name} (${problem.weight})`;
-    commonProblemSelect.appendChild(option);
+    option.value = jobType;
+    option.textContent = jobType;
+    jobTypeSelect.appendChild(option);
   });
+
+  if (previous && (adminSettings.jobTypes || []).includes(previous)) {
+    jobTypeSelect.value = previous;
+  }
 };
 
 const renderAdminSettings = () => {
-  if (!statusWeightsContainer || !commonProblemsList) return;
+  if (!statusWeightsContainer || !commonProblemsList || !jobTypesList) return;
 
   statusWeightsContainer.innerHTML = PROFILE_STATUSES.map((status) => `
     <label>
@@ -545,6 +557,22 @@ const renderAdminSettings = () => {
       <input type="number" step="0.1" data-status-weight="${status}" value="${Number(adminSettings.statusWeights?.[status] || 0)}" />
     </label>
   `).join('');
+
+  jobTypesList.innerHTML = '';
+
+  if (!(adminSettings.jobTypes || []).length) {
+    jobTypesList.innerHTML = '<p class="hint">No job types yet.</p>';
+  }
+
+  (adminSettings.jobTypes || []).forEach((jobType) => {
+    const row = document.createElement('div');
+    row.className = 'problem-row';
+    row.innerHTML = `
+      <span><strong>${jobType}</strong></span>
+      <button type="button" class="secondary" data-delete-job-type="${jobType}">Delete</button>
+    `;
+    jobTypesList.appendChild(row);
+  });
 
   commonProblemsList.innerHTML = '';
 
@@ -562,7 +590,7 @@ const renderAdminSettings = () => {
     commonProblemsList.appendChild(row);
   });
 
-  renderCommonProblemSelect();
+  renderJobTypeOptions();
 };
 
 const renderRatingCriteriaRows = () => {
@@ -612,25 +640,9 @@ const renderAll = (profiles) => {
   renderWorkerSelector(profiles);
   renderWorkerNameSuggestions(profiles);
   renderWorkerProfile(profiles, workerSelector.value);
-  renderCommonProblemSelect();
+  renderJobTypeOptions();
   renderCriterionRatings();
   renderRatingCriteriaRows();
-};
-
-const initializeCategoryOptions = () => {
-  const previous = categorySelect.value;
-  categorySelect.innerHTML = '';
-
-  getKnownCategories().forEach((category) => {
-    const option = document.createElement('option');
-    option.value = category;
-    option.textContent = category;
-    categorySelect.appendChild(option);
-  });
-
-  if (previous && getKnownCategories().includes(previous)) {
-    categorySelect.value = previous;
-  }
 };
 
 const renderRuleSelect = () => {
@@ -655,7 +667,6 @@ const renderRuleSelect = () => {
 const renderRules = () => {
   if (!rulesList) {
     renderRuleSelect();
-    initializeCategoryOptions();
     return;
   }
 
@@ -664,7 +675,6 @@ const renderRules = () => {
   if (!ratingRules.length) {
     rulesList.innerHTML = '<li class="profile-item">No rating rules yet. Add one like “Full-time → Was late = -3”.</li>';
     renderRuleSelect();
-    initializeCategoryOptions();
     return;
   }
 
@@ -682,7 +692,6 @@ const renderRules = () => {
   });
 
   renderRuleSelect();
-  initializeCategoryOptions();
 };
 
 const buildHistoryEntryRow = (entry = {}) => {
@@ -837,10 +846,7 @@ const showAdminPage = (show) => {
 };
 
 const buildRatingPayload = (data) => {
-  const selectedProblem = (adminSettings.commonProblems || []).find((problem) => problem.id === commonProblemSelect?.value);
   const noteText = data.get('note').toString().trim();
-  const goodNotes = data.get('goodNotes').toString().trim();
-  const badNotes = data.get('badNotes').toString().trim();
   const selectedCriteria = ratingCriteria
     .filter((criterion) => {
       const toggle = form.querySelector(`[data-criterion-toggle="${criterion.id}"]`);
@@ -858,16 +864,15 @@ const buildRatingPayload = (data) => {
     : null;
 
   const note = [
-    selectedProblem?.name,
     selectedCriteria.length ? `Checklist: ${selectedCriteria.map((entry) => `${entry.criterion}=${entry.label} (${entry.score})`).join('; ')}` : '',
-    goodNotes ? `Good: ${goodNotes}` : '',
-    badNotes ? `Needs work: ${badNotes}` : '',
     noteText,
   ].filter(Boolean).join(' | ');
 
+  const jobType = data.get('jobType').toString().trim();
+
   return {
     workerName: data.get('workerName').toString().trim(),
-    category: data.get('category').toString().trim(),
+    category: jobType,
     score: checklistAverage,
     reviewer: 'Anonymous',
     note,
@@ -898,108 +903,13 @@ form.addEventListener('submit', async (event) => {
   try {
     await submitRating(rating);
     form.reset();
-    initializeCategoryOptions();
     renderCriterionRatings();
-    if (ruleSelect) {
-      ruleSelect.value = '';
-    }
+    renderJobTypeOptions();
   } catch (error) {
     // eslint-disable-next-line no-alert
     alert(error.message);
   }
 });
-
-if (rulesForm) {
-  rulesForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-
-    const data = new FormData(rulesForm);
-    const category = data.get('ruleCategory').toString().trim();
-    const condition = data.get('ruleCondition').toString().trim();
-    const note = data.get('ruleNote').toString().trim();
-    const score = Number(data.get('ruleScore'));
-
-    if (!category || Number.isNaN(score)) return;
-
-    ratingRules.push({
-      id: crypto.randomUUID(),
-      condition,
-      category,
-      score,
-      note,
-    });
-
-    saveRatingRules();
-    renderRules();
-    rulesForm.reset();
-    document.getElementById('ruleScore').value = '0';
-  });
-}
-
-if (rulesList) {
-  rulesList.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-
-    const ruleId = target.getAttribute('data-delete-rule');
-    if (!ruleId) return;
-
-    ratingRules = ratingRules.filter((rule) => rule.id !== ruleId);
-    saveRatingRules();
-    renderRules();
-  });
-}
-
-if (ruleSelect) {
-  ruleSelect.addEventListener('change', () => {
-    const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
-    if (!selected) return;
-
-    categorySelect.value = selected.category;
-    const noteField = document.getElementById('note');
-    if (!noteField.value && selected.note) {
-      noteField.value = selected.note;
-    }
-  });
-}
-
-if (applyRuleButton) {
-  applyRuleButton.addEventListener('click', async () => {
-    const selected = ratingRules.find((rule) => rule.id === ruleSelect.value);
-    if (!selected) {
-      // eslint-disable-next-line no-alert
-      alert('Select a predefined category rule first.');
-      return;
-    }
-
-    const workerName = document.getElementById('workerName').value.trim();
-    if (!workerName) {
-      // eslint-disable-next-line no-alert
-      alert('Worker name is required to apply a predefined rule.');
-      return;
-    }
-
-    const existingNote = document.getElementById('note').value.trim();
-    const combinedNote = [selected.note, existingNote].filter(Boolean).join(' | ');
-
-    const rating = {
-      workerName,
-      category: selected.category,
-      score: selected.score,
-      reviewer: 'Anonymous',
-      note: combinedNote,
-      ratedAt: nowIso(),
-    };
-
-    try {
-      await submitRating(rating);
-      document.getElementById('note').value = '';
-    } catch (error) {
-      // eslint-disable-next-line no-alert
-      alert(error.message);
-    }
-  });
-}
 
 if (tabRatings) {
   tabRatings.addEventListener('click', () => {
@@ -1027,6 +937,34 @@ if (addCommonProblemButton) {
     nameField.value = '';
     weightField.value = '-2';
     renderAdminSettings();
+  });
+}
+
+if (addJobTypeButton) {
+  addJobTypeButton.addEventListener('click', () => {
+    const nameField = document.getElementById('job-type-name');
+    const name = nameField.value.trim();
+    if (!name) return;
+    if ((adminSettings.jobTypes || []).some((jobType) => jobType.toLowerCase() == name.toLowerCase())) return;
+
+    adminSettings.jobTypes.push(name);
+    nameField.value = '';
+    renderAdminSettings();
+    renderJobTypeOptions();
+  });
+}
+
+if (jobTypesList) {
+  jobTypesList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const jobType = target.getAttribute('data-delete-job-type');
+    if (!jobType) return;
+
+    adminSettings.jobTypes = (adminSettings.jobTypes || []).filter((entry) => entry !== jobType);
+    renderAdminSettings();
+    renderJobTypeOptions();
   });
 }
 
@@ -1195,7 +1133,6 @@ window.addEventListener('popstate', () => {
 adminSettings = loadAdminSettings();
 ratingRules = loadRatingRules();
 ratingCriteria = loadRatingCriteria();
-initializeCategoryOptions();
 initializeStatusOptions();
 renderRules();
 renderAdminSettings();
