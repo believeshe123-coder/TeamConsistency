@@ -20,6 +20,8 @@ const profileHistoryList = document.getElementById('profile-history-list');
 const profileNotesList = document.getElementById('profile-notes-list');
 const profilesList = document.getElementById('profiles');
 const clearButton = document.getElementById('clear-data');
+const refreshProfilesButton = document.getElementById('refresh-profiles');
+const dataSyncStatus = document.getElementById('data-sync-status');
 const jobTypeSelect = document.getElementById('job-type');
 const workerSelector = document.getElementById('worker-selector');
 const workerProfileDetail = document.getElementById('worker-profile-detail');
@@ -82,6 +84,8 @@ const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
 const nowIso = () => new Date().toISOString();
+const confirmAction = (message = 'Do you really want to clear?') => window.confirm(message);
+const AUTO_SYNC_INTERVAL_MS = 15000;
 
 const DEFAULT_STEADY_TAG = { id: 'steady-default', label: 'Steady', color: '#5f8df5', locked: true };
 
@@ -1485,6 +1489,7 @@ const buildHistoryEntryRow = (entry = {}) => {
   `;
 
   wrapper.querySelector('.remove-history-entry').addEventListener('click', () => {
+    if (!confirmAction('Do you really want to remove this history entry?')) return;
     wrapper.remove();
   });
 
@@ -1510,6 +1515,7 @@ const buildNoteEntryRow = (entry = {}) => {
   `;
 
   wrapper.querySelector('.remove-history-entry').addEventListener('click', () => {
+    if (!confirmAction('Do you really want to remove this profile note?')) return;
     wrapper.remove();
   });
 
@@ -1595,9 +1601,25 @@ const collectProfileNotes = () => {
     .filter((entry) => entry.note);
 };
 
-const refreshFromBackend = async () => {
-  profilesCache = await fetchProfiles();
-  renderAll(profilesCache);
+const setDataSyncStatus = (message, isError = false) => {
+  if (!dataSyncStatus) return;
+  dataSyncStatus.textContent = message;
+  dataSyncStatus.classList.toggle('field-error', isError);
+};
+
+const refreshFromBackend = async ({ silent = false } = {}) => {
+  try {
+    profilesCache = await fetchProfiles();
+    renderAll(profilesCache);
+    if (!silent) {
+      setDataSyncStatus(`Data sync: up to date as of ${new Date().toLocaleTimeString()}.`);
+    }
+  } catch (error) {
+    if (!silent) {
+      setDataSyncStatus(`Data sync warning: ${error.message || 'Unable to sync right now.'}`, true);
+    }
+    throw error;
+  }
 };
 
 const setQuickWorkerFeedback = (message, isError = false) => {
@@ -1608,6 +1630,7 @@ const setQuickWorkerFeedback = (message, isError = false) => {
 
 const quickAddWorkerByName = async () => {
   if (!quickWorkerNameInput) return;
+  if (!canAccessAdmin()) return;
 
   const workerName = quickWorkerNameInput.value.trim();
   if (workerName.length < 2) {
@@ -1691,7 +1714,11 @@ const lockAdminAccess = () => {
   setAdminFeedback('Admin area locked.');
 };
 
-const showProfilePage = (show) => {
+const showProfilePage = (show, options = {}) => {
+  const { requireAdminAccess = false } = options;
+  if (show && requireAdminAccess && !canAccessAdmin()) {
+    return;
+  }
   mainPage.classList.toggle('hidden', show);
   profilePage.classList.toggle('hidden', !show);
   adminPage.classList.add('hidden');
@@ -1890,6 +1917,7 @@ if (jobTypesList) {
 
     const jobType = target.getAttribute('data-delete-job-type');
     if (!jobType) return;
+    if (!confirmAction(`Do you really want to remove job type "${jobType}"?`)) return;
 
     adminSettings.jobTypes = (adminSettings.jobTypes || []).filter((entry) => entry !== jobType);
     persistAdminSettings({ rerenderAdmin: true });
@@ -2041,6 +2069,7 @@ if (ratingCriteriaList) {
 
     const criterionId = target.getAttribute('data-delete-criterion');
     if (!criterionId) return;
+    if (!confirmAction('Do you really want to remove this checklist item?')) return;
 
     ratingCriteria = ratingCriteria.filter((criterion) => criterion.id !== criterionId);
     saveRatingCriteria();
@@ -2106,6 +2135,7 @@ if (customTagsList) {
 
     const tagId = target.getAttribute('data-delete-custom-tag');
     if (!tagId) return;
+    if (!confirmAction('Do you really want to remove this tag?')) return;
 
     adminSettings.customTags = normalizeCustomTags(adminSettings.customTags)
       .filter((tag) => tag.id !== tagId || tag.locked);
@@ -2251,6 +2281,7 @@ if (checklistMathRulesList) {
 
     const ruleId = target.getAttribute('data-delete-checklist-math-rule');
     if (!ruleId) return;
+    if (!confirmAction('Do you really want to remove this checklist math rule?')) return;
 
     adminSettings.checklistMathRules = normalizeChecklistMathRules(adminSettings.checklistMathRules)
       .filter((rule) => rule.id !== ruleId);
@@ -2269,6 +2300,7 @@ if (profilesList) {
     if (profileIdToEdit) {
       const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToEdit));
       if (!profile) return;
+      if (!canAccessAdmin()) return;
       openEditProfileForm(profile);
       return;
     }
@@ -2278,7 +2310,8 @@ if (profilesList) {
 
     const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToDelete));
     if (!profile) return;
-    if (!window.confirm(`Delete profile "${profile.name}"? This removes all ratings and notes for this worker.`)) return;
+    if (!canAccessAdmin()) return;
+    if (!confirmAction(`Do you really want to remove profile "${profile.name}"? This removes all ratings and notes for this worker.`)) return;
 
     try {
       await deleteProfile(profileIdToDelete);
@@ -2303,6 +2336,7 @@ if (workerProfileDetail) {
 
     const ratingId = target.getAttribute('data-delete-rating-id');
     if (ratingId) {
+      if (!confirmAction('Do you really want to remove this rating?')) return;
       try {
         await deleteProfileRating(profileId, ratingId);
         await refreshFromBackend();
@@ -2317,6 +2351,7 @@ if (workerProfileDetail) {
 
     const noteId = target.getAttribute('data-delete-note-id');
     if (noteId) {
+      if (!confirmAction('Do you really want to remove this note?')) return;
       try {
         await deleteProfileNote(profileId, noteId);
         await refreshFromBackend();
@@ -2331,8 +2366,9 @@ if (workerProfileDetail) {
 }
 
 addProfileButton.addEventListener('click', () => {
+  if (!canAccessAdmin()) return;
   resetProfileForm();
-  showProfilePage(true);
+  showProfilePage(true, { requireAdminAccess: true });
 });
 
 addHistoryEntryButton.addEventListener('click', () => {
@@ -2350,6 +2386,8 @@ cancelAddProfileButton.addEventListener('click', () => {
 
 addProfileForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+
+  if (!canAccessAdmin()) return;
 
   const data = new FormData(addProfileForm);
   const profilePayload = {
@@ -2394,7 +2432,19 @@ if (quickWorkerNameInput) {
   });
 }
 
+if (refreshProfilesButton) {
+  refreshProfilesButton.addEventListener('click', async () => {
+    try {
+      await refreshFromBackend();
+    } catch {
+      // status text already updated in refreshFromBackend
+    }
+  });
+}
+
 clearButton.addEventListener('click', async () => {
+  if (!canAccessAdmin()) return;
+  if (!confirmAction('Do you really want to clear?')) return;
   try {
     await clearProfiles();
     workerSelector.value = '';
@@ -2413,7 +2463,7 @@ window.addEventListener('popstate', () => {
   }
 
   showAdminPage(false);
-  showProfilePage(hash === '#add-profile');
+  showProfilePage(hash === '#add-profile', { requireAdminAccess: hash === '#add-profile' });
 });
 
 if (!localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY)) {
@@ -2429,12 +2479,19 @@ renderAdminSettings();
 setupAdminSectionToggles();
 resetHistoryEntries();
 resetNoteEntries();
+setDataSyncStatus('Data sync: loading latest backend changes...');
 if (window.location.hash === '#admin-settings') {
   showAdminPage(true);
 } else {
   showAdminPage(false);
-  showProfilePage(window.location.hash === '#add-profile');
+  showProfilePage(window.location.hash === '#add-profile', { requireAdminAccess: window.location.hash === '#add-profile' });
 }
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });
+
+window.setInterval(() => {
+  refreshFromBackend({ silent: true }).catch(() => {
+    // background sync should never interrupt users
+  });
+}, AUTO_SYNC_INTERVAL_MS);

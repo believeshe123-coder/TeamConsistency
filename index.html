@@ -337,11 +337,13 @@
             <h2>Manage Profiles</h2>
             <div class="section-actions">
               <button type="button" id="add-profile" class="secondary">Add Profile</button>
+              <button type="button" id="refresh-profiles" class="secondary">Refresh</button>
               <button type="button" id="clear-data" class="secondary">Clear all</button>
             </div>
           </div>
           <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
           <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
+          <p id="data-sync-status" class="hint" aria-live="polite">Data sync: waiting for first refresh…</p>
           <ul id="profiles" class="profiles"></ul>
         </section>
       </section>
