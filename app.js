@@ -56,10 +56,6 @@ const customTagRecentColors = document.getElementById('custom-tag-recent-colors'
 const addCustomTagButton = document.getElementById('add-custom-tag');
 const mathInsightInput = document.getElementById('math-insight');
 const addChecklistMathRuleButton = document.getElementById('add-checklist-math-rule');
-const bulkChecklistRulesInput = document.getElementById('bulk-checklist-rules');
-const applyBulkChecklistRulesButton = document.getElementById('apply-bulk-checklist-rules');
-const bulkTagsInput = document.getElementById('bulk-tags');
-const applyBulkTagsButton = document.getElementById('apply-bulk-tags');
 const addJobTypePanel = document.getElementById('add-job-type-panel');
 const addRatingCriterionPanel = document.getElementById('add-rating-criterion-panel');
 const addChecklistMathRulePanel = document.getElementById('add-checklist-math-rule-panel');
@@ -68,6 +64,8 @@ const workerNameSelect = document.getElementById('workerName');
 const quickAddWorkerButton = document.getElementById('quick-add-worker');
 const quickWorkerNameInput = document.getElementById('quick-worker-name');
 const quickWorkerFeedback = document.getElementById('quick-worker-feedback');
+const refreshMaintenanceReportButton = document.getElementById('refresh-maintenance-report');
+const maintenanceReport = document.getElementById('maintenance-report');
 
 let profilesCache = [];
 let ratingRules = [];
@@ -83,6 +81,13 @@ const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
 const nowIso = () => new Date().toISOString();
+const normalizeNameKey = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+const normalizeEmployeeId = (value) => String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+const canonicalWorkerKey = (name, employeeId = '') => {
+  const n = normalizeNameKey(name);
+  const eid = normalizeEmployeeId(employeeId);
+  return eid ? `${n}::${eid}` : n;
+};
 const confirmAction = (message = 'Do you really want to clear?') => window.confirm(message);
 const AUTO_SYNC_INTERVAL_MS = 15000;
 
@@ -184,6 +189,7 @@ const upsertLocalProfile = (incomingProfile) => {
     name: incomingProfile.name,
     profileStatus: incomingProfile.status || incomingProfile.profileStatus || '',
     backgroundInfo: incomingProfile.background || incomingProfile.backgroundInfo || '',
+    externalEmployeeId: incomingProfile.externalEmployeeId || previous?.externalEmployeeId || '',
     ratings: previous?.ratings || [],
     historyEntries: incomingProfile.historyEntries || [],
     profileNotes: incomingProfile.profileNotes || [],
@@ -285,6 +291,7 @@ const saveRating = async (rating) => {
         name: rating.workerName,
         profileStatus: '',
         backgroundInfo: '',
+        externalEmployeeId: rating.externalEmployeeId || '',
         ratings: [ratingEntry],
         historyEntries: [{
           id: `local-history-${Date.now()}`,
@@ -303,6 +310,53 @@ const saveRating = async (rating) => {
     saveLocalProfiles(profiles);
     return profile;
   }
+};
+
+
+const updateAdminCatalog = async () => {
+  try {
+    await fetch(`${API_BASE}/admin/catalog`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobTypes: adminSettings.jobTypes || [], criteriaNames: ratingCriteria.map((item) => item.name) }),
+    });
+  } catch {
+    // no-op fallback for offline mode
+  }
+};
+
+const fetchMaintenanceReport = async () => {
+  const response = await fetch(`${API_BASE}/admin/maintenance-report`);
+  if (!response.ok) throw new Error('Unable to load maintenance report');
+  return response.json();
+};
+
+const mergeProfiles = async (sourceProfileId, targetProfileId) => {
+  const response = await fetch(`${API_BASE}/profiles/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceProfileId, targetProfileId }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || 'Unable to merge profiles');
+  }
+
+  return response.json();
+};
+
+const findLikelyDuplicates = (name, employeeId = '', excludeId = null) => {
+  const targetName = normalizeNameKey(name);
+  const targetId = normalizeEmployeeId(employeeId);
+
+  return profilesCache.filter((profile) => {
+    if (excludeId !== null && String(profile.id) === String(excludeId)) return false;
+    const profileName = normalizeNameKey(profile.name);
+    const profileId = normalizeEmployeeId(profile.externalEmployeeId || '');
+    if (targetId && profileId) return targetName === profileName || targetId === profileId;
+    return targetName === profileName;
+  });
 };
 
 const addProfile = async (profile) => {
@@ -357,6 +411,7 @@ const updateProfile = async (profileId, payload) => {
       ...current,
       name: payload.name,
       profileStatus: payload.status,
+      externalEmployeeId: payload.externalEmployeeId || current.externalEmployeeId || '',
       backgroundInfo: payload.background,
       historyEntries: Array.isArray(payload.historyEntries) ? payload.historyEntries : (current.historyEntries || []),
       profileNotes: Array.isArray(payload.profileNotes) ? payload.profileNotes : (current.profileNotes || []),
@@ -561,74 +616,6 @@ const ensureTagExists = (label, color = '#5f8df5') => {
   return true;
 };
 
-const parseBulkTags = (rawText) => {
-  const lines = String(rawText || '').split('\n');
-  let added = 0;
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-
-    const [namePart, colorPart] = trimmed.split('|').map((part) => String(part || '').trim());
-    if (!namePart) return;
-
-    const wasAdded = ensureTagExists(namePart, colorPart || '#5f8df5');
-    if (wasAdded) {
-      added += 1;
-      if (colorPart) saveRecentTagColor(colorPart);
-    }
-  });
-
-  return added;
-};
-
-const parseBulkChecklistRules = (rawText) => {
-  const lines = String(rawText || '').split('\n');
-  let added = 0;
-  let skipped = 0;
-
-  const existingRules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-
-    const [criterionName, labelRaw, reportsRange = '', weightRaw = '1', tag = '', insight = ''] = trimmed
-      .split('|')
-      .map((part) => String(part || '').trim());
-
-    const criterion = findCriterionByName(criterionName);
-    if (!criterion) {
-      skipped += 1;
-      return;
-    }
-
-    const labelScore = resolveLabelScore(criterion, labelRaw);
-    const weightMultiplier = Number(weightRaw || 1);
-
-    if (!labelScore || !Number.isFinite(weightMultiplier) || weightMultiplier < 0) {
-      skipped += 1;
-      return;
-    }
-
-    if (tag) ensureTagExists(tag);
-
-    existingRules.push({
-      id: crypto.randomUUID(),
-      criterionId: criterion.id,
-      labelScore,
-      reportsRange,
-      weightMultiplier,
-      tag,
-      insight,
-    });
-    added += 1;
-  });
-
-  adminSettings.checklistMathRules = existingRules;
-  return { added, skipped };
-};
-
 const defaultRatingCriteria = () => ([
   {
     id: crypto.randomUUID(),
@@ -706,6 +693,7 @@ const loadRatingCriteria = () => {
 
 const saveRatingCriteria = () => {
   localStorage.setItem(RATING_CRITERIA_KEY, JSON.stringify(ratingCriteria));
+  updateAdminCatalog();
 };
 
 const loadRatingRules = () => {
@@ -1269,7 +1257,7 @@ const renderChecklistMathRules = () => {
     row.className = 'problem-row';
     row.innerHTML = `
       <span><strong>${criterionName}</strong> → ${labelText} | Reports: ${rangeText} | Weight x${rule.weightMultiplier}${tagText}${insightText}</span>
-      <div class="row-actions"><button type="button" class="secondary" data-edit-checklist-math-rule="${rule.id}">Edit</button><button type="button" class="secondary" data-delete-checklist-math-rule="${rule.id}">Delete</button></div>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-checklist-math-rule="${rule.id}">Edit</button><button type="button" class="secondary" data-duplicate-checklist-math-rule="${rule.id}">Duplicate</button><button type="button" class="secondary" data-delete-checklist-math-rule="${rule.id}">Delete</button></div>
     `;
     checklistMathRulesList.appendChild(row);
   });
@@ -1301,7 +1289,7 @@ const renderCustomTags = () => {
     row.className = 'problem-row';
     row.innerHTML = `
       <span><span class="badge custom-tag-preview" style="background:${tag.color}; color:#1f2330;">${tag.label}</span>${tag.locked ? ' (default)' : ''}</span>
-      <div class="row-actions"><button type="button" class="secondary" data-edit-custom-tag="${tag.id}">Edit</button>${tag.locked ? '<span class="hint">Locked</span>' : `<button type="button" class="secondary" data-delete-custom-tag="${tag.id}">Delete</button>`}</div>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-custom-tag="${tag.id}">Edit</button><button type="button" class="secondary" data-duplicate-custom-tag="${tag.id}">Duplicate</button>${tag.locked ? '<span class="hint">Locked</span>' : `<button type="button" class="secondary" data-delete-custom-tag="${tag.id}">Delete</button>`}</div>
     `;
     customTagsList.appendChild(row);
   });
@@ -1350,6 +1338,7 @@ const syncStatusWeightsFromInputs = () => {
 
 const persistAdminSettings = ({ rerenderAdmin = false } = {}) => {
   saveAdminSettings();
+  updateAdminCatalog();
   if (rerenderAdmin) {
     renderAdminSettings();
   }
@@ -1396,6 +1385,32 @@ const renderCriterionRatings = () => {
     `;
     criteriaRatingsContainer.appendChild(row);
   });
+};
+
+
+const renderMaintenanceReport = (report) => {
+  if (!maintenanceReport) return;
+  const duplicates = report?.potentialDuplicates || [];
+  const orphans = report?.orphans || {};
+
+  maintenanceReport.innerHTML = `
+    <div class="problem-row"><span><strong>Potential duplicates:</strong> ${duplicates.length}</span></div>
+    ${duplicates.length ? duplicates.map((entry) => `<div class="problem-row"><span>${entry.canonicalName} (${entry.count}) — ${entry.workers}</span></div>`).join('') : '<p class="hint">No likely duplicates found.</p>'}
+    <div class="problem-row"><span><strong>Orphan ratings:</strong> ${Number(orphans.ratings || 0)}</span></div>
+    <div class="problem-row"><span><strong>Orphan history entries:</strong> ${Number(orphans.historyEntries || 0)}</span></div>
+    <div class="problem-row"><span><strong>Orphan profile notes:</strong> ${Number(orphans.profileNotes || 0)}</span></div>
+  `;
+};
+
+const refreshMaintenanceReport = async () => {
+  if (!maintenanceReport) return;
+  try {
+    maintenanceReport.innerHTML = '<p class="hint">Loading maintenance report…</p>';
+    const report = await fetchMaintenanceReport();
+    renderMaintenanceReport(report);
+  } catch (error) {
+    maintenanceReport.innerHTML = `<p class="field-error">${error.message || 'Unable to load maintenance report.'}</p>`;
+  }
 };
 
 const renderAll = (profiles) => {
@@ -1561,10 +1576,12 @@ const openEditProfileForm = (profile) => {
   const nameField = document.getElementById('profileName');
   const statusField = document.getElementById('profileStatus');
   const backgroundField = document.getElementById('profileBackground');
+  const employeeIdField = document.getElementById('profileEmployeeId');
 
   if (nameField) nameField.value = profile.name || '';
   if (statusField) statusField.value = profile.profileStatus || '';
   if (backgroundField) backgroundField.value = profile.backgroundInfo || '';
+  if (employeeIdField) employeeIdField.value = profile.externalEmployeeId || '';
 
   resetHistoryEntries(profile.historyEntries || []);
   resetNoteEntries(profile.profileNotes || []);
@@ -1830,6 +1847,8 @@ const buildRatingPayload = (data) => {
     score: checklistAverage,
     reviewer: 'Anonymous',
     note,
+    selectedCriteria,
+    externalEmployeeId: data.get('externalEmployeeId').toString().trim(),
     ratedAt: nowIso(),
   };
 };
@@ -1852,6 +1871,12 @@ form.addEventListener('submit', async (event) => {
     // eslint-disable-next-line no-alert
     alert('Select at least one checklist item to create a rating.');
     return;
+  }
+
+  const likelyDuplicates = findLikelyDuplicates(rating.workerName, rating.externalEmployeeId);
+  if (likelyDuplicates.length) {
+    const listText = likelyDuplicates.map((entry) => `${entry.name}${entry.externalEmployeeId ? ` (${entry.externalEmployeeId})` : ''}`).join(', ');
+    if (!confirmAction(`Possible duplicate worker detected: ${listText}. Save anyway?`)) return;
   }
 
   try {
@@ -2136,6 +2161,23 @@ if (customTagsList) {
       return;
     }
 
+    const duplicateTagId = target.getAttribute('data-duplicate-custom-tag');
+    if (duplicateTagId) {
+      const tags = normalizeCustomTags(adminSettings.customTags);
+      const selectedTag = tags.find((tag) => tag.id === duplicateTagId);
+      if (!selectedTag) return;
+
+      editingCustomTagId = null;
+      addCustomTagPanel?.classList.remove('hidden');
+      if (customTagNameInput) {
+        customTagNameInput.disabled = false;
+        customTagNameInput.value = `${selectedTag.label} Copy`;
+        customTagNameInput.focus();
+      }
+      if (customTagColorInput) customTagColorInput.value = normalizeColorHex(selectedTag.color || '#5f8df5');
+      return;
+    }
+
     const tagId = target.getAttribute('data-delete-custom-tag');
     if (!tagId) return;
     if (!confirmAction('Do you really want to remove this tag?')) return;
@@ -2164,26 +2206,6 @@ if (customTagRecentColors) {
     renderRecentTagColors();
   });
 }
-
-
-if (applyBulkTagsButton) {
-  applyBulkTagsButton.addEventListener('click', () => {
-    const added = parseBulkTags(bulkTagsInput?.value || '');
-    if (bulkTagsInput) bulkTagsInput.value = '';
-    persistAdminSettings({ rerenderAdmin: true });
-    alert(`Quick tag setup complete. Added ${added} tag(s).`);
-  });
-}
-
-if (applyBulkChecklistRulesButton) {
-  applyBulkChecklistRulesButton.addEventListener('click', () => {
-    const { added, skipped } = parseBulkChecklistRules(bulkChecklistRulesInput?.value || '');
-    if (bulkChecklistRulesInput) bulkChecklistRulesInput.value = '';
-    persistAdminSettings({ rerenderAdmin: true });
-    alert(`Quick checklist setup complete. Added ${added} rule(s), skipped ${skipped}.`);
-  });
-}
-
 if (mathMainCriterionSelect) {
   mathMainCriterionSelect.addEventListener('change', () => {
     const labelChoices = getCriterionLabelChoices(mathMainCriterionSelect.value);
@@ -2269,6 +2291,26 @@ if (checklistMathRulesList) {
       if (!selectedRule) return;
 
       editingChecklistMathRuleId = editRuleId;
+      addChecklistMathRulePanel?.classList.remove('hidden');
+      if (mathMainCriterionSelect) {
+        mathMainCriterionSelect.value = selectedRule.criterionId;
+        mathMainCriterionSelect.dispatchEvent(new Event('change'));
+      }
+      if (mathLabelSelect) mathLabelSelect.value = selectedRule.labelScore;
+      if (mathReportRangeInput) mathReportRangeInput.value = selectedRule.reportsRange || '';
+      if (mathWeightMultiplierInput) mathWeightMultiplierInput.value = String(selectedRule.weightMultiplier);
+      if (mathTagInput) mathTagInput.value = selectedRule.tag || '';
+      if (mathInsightInput) mathInsightInput.value = selectedRule.insight || '';
+      return;
+    }
+
+    const duplicateRuleId = target.getAttribute('data-duplicate-checklist-math-rule');
+    if (duplicateRuleId) {
+      const rules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
+      const selectedRule = rules.find((rule) => rule.id === duplicateRuleId);
+      if (!selectedRule) return;
+
+      editingChecklistMathRuleId = null;
       addChecklistMathRulePanel?.classList.remove('hidden');
       if (mathMainCriterionSelect) {
         mathMainCriterionSelect.value = selectedRule.criterionId;
@@ -2398,9 +2440,26 @@ addProfileForm.addEventListener('submit', async (event) => {
     name: data.get('name').toString().trim(),
     status: data.get('status').toString().trim(),
     background: data.get('background').toString().trim(),
+    externalEmployeeId: data.get('externalEmployeeId').toString().trim(),
     historyEntries: collectHistoryEntries(),
     profileNotes: collectProfileNotes(),
   };
+
+  const likelyDuplicates = findLikelyDuplicates(profilePayload.name, profilePayload.externalEmployeeId, editingProfileId);
+  if (likelyDuplicates.length) {
+    const firstMatch = likelyDuplicates[0];
+    const shouldMerge = confirmAction(`Likely duplicate found (${firstMatch.name}). Click OK to merge into existing profile, or Cancel to continue without merge.`);
+    if (shouldMerge && editingProfileId) {
+      try {
+        await mergeProfiles(editingProfileId, firstMatch.id);
+        await refreshFromBackend();
+        return;
+      } catch (error) {
+        alert(error.message || 'Unable to merge profiles');
+        return;
+      }
+    }
+  }
 
   try {
     const savedProfile = editingProfileId
@@ -2433,6 +2492,12 @@ if (quickWorkerNameInput) {
     if (event.key !== 'Enter') return;
     event.preventDefault();
     await quickAddWorkerByName();
+  });
+}
+
+if (refreshMaintenanceReportButton) {
+  refreshMaintenanceReportButton.addEventListener('click', async () => {
+    await refreshMaintenanceReport();
   });
 }
 

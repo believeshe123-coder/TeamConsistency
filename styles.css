@@ -355,6 +355,7 @@ select:user-invalid {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .recent-color-choices {
@@ -634,4 +635,3 @@ select:user-invalid {
     grid-template-columns: 1fr;
   }
 }
-

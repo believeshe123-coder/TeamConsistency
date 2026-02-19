@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import math
+import re
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -19,7 +20,25 @@ def now_iso() -> str:
 def db_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
+    connection.execute('PRAGMA foreign_keys = ON')
     return connection
+
+
+def normalize_worker_name(name: str) -> str:
+    return re.sub(r'\s+', ' ', str(name or '').strip()).lower()
+
+
+def normalize_employee_id(employee_id: str | None) -> str | None:
+    cleaned = str(employee_id or '').strip()
+    if not cleaned:
+        return None
+    return re.sub(r'\s+', '', cleaned).lower()
+
+
+def canonical_worker_key(name: str, employee_id: str | None = None) -> str:
+    normalized_name = normalize_worker_name(name)
+    normalized_employee_id = normalize_employee_id(employee_id)
+    return f'{normalized_name}::{normalized_employee_id}' if normalized_employee_id else normalized_name
 
 
 def initialize_database() -> None:
@@ -37,7 +56,10 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 profile_status TEXT,
-                background_info TEXT
+                background_info TEXT,
+                external_employee_id TEXT,
+                canonical_name TEXT,
+                canonical_worker_key TEXT
             )
             '''
         )
@@ -86,6 +108,9 @@ def initialize_database() -> None:
 
         ensure_profile_columns(connection)
         ensure_profile_history_columns(connection)
+        initialize_admin_catalog(connection)
+        ensure_worker_canonical_columns(connection)
+        ensure_uniqueness_indexes(connection)
 
 
 def ensure_profile_columns(connection: sqlite3.Connection) -> None:
@@ -97,12 +122,146 @@ def ensure_profile_columns(connection: sqlite3.Connection) -> None:
     if 'background_info' not in columns:
         connection.execute('ALTER TABLE worker_profiles ADD COLUMN background_info TEXT')
 
+    if 'external_employee_id' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN external_employee_id TEXT')
+
+    if 'canonical_name' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN canonical_name TEXT')
+
+    if 'canonical_worker_key' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN canonical_worker_key TEXT')
+
 
 def ensure_profile_history_columns(connection: sqlite3.Connection) -> None:
     columns = {row['name'] for row in connection.execute('PRAGMA table_info(worker_profile_history)').fetchall()}
 
     if 'note' not in columns:
         connection.execute('ALTER TABLE worker_profile_history ADD COLUMN note TEXT')
+
+
+def initialize_admin_catalog(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS admin_catalog (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        '''
+    )
+
+    defaults = {
+        'job_types': ['Loading dock', 'Warehouse', 'Picker'],
+        'criteria_names': ['Late / on time', 'Work quality'],
+    }
+
+    for key, value in defaults.items():
+        connection.execute(
+            '''
+            INSERT INTO admin_catalog (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO NOTHING
+            ''',
+            (key, json.dumps(value)),
+        )
+
+
+def ensure_worker_canonical_columns(connection: sqlite3.Connection) -> None:
+    columns = {row['name'] for row in connection.execute('PRAGMA table_info(worker_profiles)').fetchall()}
+
+    if 'external_employee_id' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN external_employee_id TEXT')
+
+    if 'canonical_name' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN canonical_name TEXT')
+
+    if 'canonical_worker_key' not in columns:
+        connection.execute('ALTER TABLE worker_profiles ADD COLUMN canonical_worker_key TEXT')
+
+    rows = connection.execute('SELECT id, name, external_employee_id FROM worker_profiles').fetchall()
+    for row in rows:
+        employee_id = normalize_employee_id(row['external_employee_id'])
+        connection.execute(
+            '''
+            UPDATE worker_profiles
+            SET external_employee_id = ?, canonical_name = ?, canonical_worker_key = ?
+            WHERE id = ?
+            ''',
+            (
+                employee_id,
+                normalize_worker_name(row['name']),
+                canonical_worker_key(row['name'], employee_id),
+                int(row['id']),
+            ),
+        )
+
+
+def ensure_uniqueness_indexes(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_profiles_external_employee_id ON worker_profiles(external_employee_id) WHERE external_employee_id IS NOT NULL'
+    )
+    connection.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_profiles_canonical_key ON worker_profiles(canonical_worker_key) WHERE canonical_worker_key IS NOT NULL'
+    )
+
+
+def load_admin_list(connection: sqlite3.Connection, key: str, default: list[str] | None = None) -> list[str]:
+    row = connection.execute('SELECT value FROM admin_catalog WHERE key = ?', (key,)).fetchone()
+    if row is None:
+        return default or []
+
+    try:
+        parsed = json.loads(row['value'])
+    except json.JSONDecodeError:
+        return default or []
+
+    if not isinstance(parsed, list):
+        return default or []
+
+    unique: list[str] = []
+    seen = set()
+    for item in parsed:
+        text = str(item or '').strip()
+        lower = text.lower()
+        if text and lower not in seen:
+            seen.add(lower)
+            unique.append(text)
+    return unique
+
+
+def save_admin_list(connection: sqlite3.Connection, key: str, values: list[str]) -> None:
+    connection.execute(
+        '''
+        INSERT INTO admin_catalog (key, value, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        ''',
+        (key, json.dumps(values)),
+    )
+
+
+def validate_allowed_rating_values(connection: sqlite3.Connection, payload: dict) -> str | None:
+    category = str(payload.get('category', '')).strip()
+    allowed_job_types = load_admin_list(connection, 'job_types')
+    if allowed_job_types and category.lower() not in {item.lower() for item in allowed_job_types}:
+        return f'category must be one of the admin-defined job types: {", ".join(allowed_job_types)}'
+
+    selected_criteria = payload.get('selectedCriteria', [])
+    if selected_criteria is None:
+        selected_criteria = []
+    if not isinstance(selected_criteria, list):
+        return 'selectedCriteria must be an array when provided'
+
+    allowed_criteria = load_admin_list(connection, 'criteria_names')
+    lookup = {item.lower() for item in allowed_criteria}
+    for entry in selected_criteria:
+        criterion = str((entry or {}).get('criterion', '')).strip()
+        if not criterion:
+            return 'Each selectedCriteria entry must include criterion'
+        if lookup and criterion.lower() not in lookup:
+            return f'criterion "{criterion}" is not admin-defined'
+
+    return None
 
 
 def validate_rating_payload(payload: dict, require_worker_name: bool = False) -> str | None:
@@ -374,6 +533,9 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
         'updatedAt': profile_row['updated_at'],
         'profileStatus': profile_row['profile_status'],
         'backgroundInfo': profile_row['background_info'],
+        'externalEmployeeId': profile_row['external_employee_id'],
+        'canonicalName': profile_row['canonical_name'],
+        'canonicalWorkerKey': profile_row['canonical_worker_key'],
         'ratings': ratings,
         'historyEntries': history_entries,
         'profileNotes': profile_notes,
@@ -426,6 +588,67 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             self._send_json(200, profiles)
             return
 
+        if path == '/api/admin/catalog':
+            with db_connection() as connection:
+                self._send_json(
+                    200,
+                    {
+                        'jobTypes': load_admin_list(connection, 'job_types'),
+                        'criteriaNames': load_admin_list(connection, 'criteria_names'),
+                    },
+                )
+            return
+
+        if path == '/api/admin/maintenance-report':
+            with db_connection() as connection:
+                duplicates = connection.execute(
+                    '''
+                    SELECT canonical_name AS canonicalName, COUNT(*) AS count,
+                           GROUP_CONCAT(name || ' (#' || id || ')', '; ') AS workers
+                    FROM worker_profiles
+                    GROUP BY canonical_name
+                    HAVING COUNT(*) > 1
+                    ORDER BY COUNT(*) DESC, canonical_name ASC
+                    '''
+                ).fetchall()
+                orphaned_ratings = connection.execute(
+                    '''
+                    SELECT COUNT(*) AS count
+                    FROM worker_ratings r
+                    LEFT JOIN worker_profiles p ON p.id = r.worker_id
+                    WHERE p.id IS NULL
+                    '''
+                ).fetchone()['count']
+                orphaned_history = connection.execute(
+                    '''
+                    SELECT COUNT(*) AS count
+                    FROM worker_profile_history h
+                    LEFT JOIN worker_profiles p ON p.id = h.worker_id
+                    WHERE p.id IS NULL
+                    '''
+                ).fetchone()['count']
+                orphaned_notes = connection.execute(
+                    '''
+                    SELECT COUNT(*) AS count
+                    FROM worker_profile_notes n
+                    LEFT JOIN worker_profiles p ON p.id = n.worker_id
+                    WHERE p.id IS NULL
+                    '''
+                ).fetchone()['count']
+
+            self._send_json(
+                200,
+                {
+                    'potentialDuplicates': [dict(row) for row in duplicates],
+                    'orphans': {
+                        'ratings': orphaned_ratings,
+                        'historyEntries': orphaned_history,
+                        'profileNotes': orphaned_notes,
+                    },
+                },
+            )
+            return
+
         if path.startswith('/api/profiles/'):
             profile_id = path.split('/')[-1]
             if not profile_id.isdigit():
@@ -455,43 +678,49 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 return
 
             worker_name = str(payload.get('name', payload.get('workerName'))).strip()
+            external_employee_id = normalize_employee_id(payload.get('externalEmployeeId'))
+            key = canonical_worker_key(worker_name, external_employee_id)
             profile_status = str(payload.get('status')).strip()
             background_info = str(payload.get('background', payload.get('backgroundInfo', ''))).strip()
             history_entries = payload.get('historyEntries', payload.get('history', [])) or []
             profile_notes = payload.get('profileNotes', payload.get('notesTimeline', [])) or []
 
-            with db_connection() as connection:
-                existing = connection.execute(
-                    'SELECT * FROM worker_profiles WHERE lower(name) = lower(?)',
-                    (worker_name,),
-                ).fetchone()
+            try:
+                with db_connection() as connection:
+                    existing = connection.execute(
+                        'SELECT * FROM worker_profiles WHERE canonical_worker_key = ?',
+                        (key,),
+                    ).fetchone()
 
-                if existing is None:
-                    cursor = connection.execute(
-                        '''
-                        INSERT INTO worker_profiles (name, profile_status, background_info)
-                        VALUES (?, ?, ?)
-                        ''',
-                        (worker_name, profile_status, background_info),
-                    )
-                    worker_id = int(cursor.lastrowid)
-                    status = 201
-                else:
-                    worker_id = int(existing['id'])
-                    connection.execute(
-                        '''
-                        UPDATE worker_profiles
-                        SET profile_status = ?, background_info = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                        ''',
-                        (profile_status, background_info, worker_id),
-                    )
-                    status = 200
+                    if existing is None:
+                        cursor = connection.execute(
+                            '''
+                            INSERT INTO worker_profiles (name, profile_status, background_info, external_employee_id, canonical_name, canonical_worker_key)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ''',
+                            (worker_name, profile_status, background_info, external_employee_id, normalize_worker_name(worker_name), key),
+                        )
+                        worker_id = int(cursor.lastrowid)
+                        status = 201
+                    else:
+                        worker_id = int(existing['id'])
+                        connection.execute(
+                            '''
+                            UPDATE worker_profiles
+                            SET profile_status = ?, background_info = ?, external_employee_id = ?, canonical_name = ?, canonical_worker_key = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            ''',
+                            (profile_status, background_info, external_employee_id, normalize_worker_name(worker_name), key, worker_id),
+                        )
+                        status = 200
 
-                replace_profile_history(connection, worker_id, history_entries)
-                replace_profile_notes(connection, worker_id, profile_notes)
-                row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
-                profile = build_profile(connection, row)
+                    replace_profile_history(connection, worker_id, history_entries)
+                    replace_profile_notes(connection, worker_id, profile_notes)
+                    row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
+                    profile = build_profile(connection, row)
+            except sqlite3.IntegrityError:
+                self._send_json(409, {'message': 'Duplicate worker key or employee ID detected. Merge duplicates or change employee ID.'})
+                return
 
             self._send_json(status, profile)
             return
@@ -504,60 +733,119 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 return
 
             worker_name = str(payload.get('workerName')).strip()
+            external_employee_id = normalize_employee_id(payload.get('externalEmployeeId'))
+            key = canonical_worker_key(worker_name, external_employee_id)
             category = str(payload.get('category')).strip()
             score = float(payload.get('score'))
             reviewer = str(payload.get('reviewer')).strip()
             note = str(payload.get('note', '')).strip()
             rated_at = payload.get('ratedAt') or now_iso()
 
-            with db_connection() as connection:
-                existing = connection.execute(
-                    'SELECT * FROM worker_profiles WHERE lower(name) = lower(?)',
-                    (worker_name,),
-                ).fetchone()
+            try:
+                with db_connection() as connection:
+                    allowed_error = validate_allowed_rating_values(connection, payload)
+                    if allowed_error:
+                        self._send_json(400, {'message': allowed_error})
+                        return
 
-                if existing is None:
-                    cursor = connection.execute(
-                        '''
-                        INSERT INTO worker_profiles (name, job_category, score, reviewer, notes, rated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ''',
-                        (worker_name, category, score, reviewer, note, rated_at),
-                    )
-                    worker_id = int(cursor.lastrowid)
-                    status = 201
-                else:
-                    worker_id = int(existing['id'])
+                    existing = connection.execute(
+                        'SELECT * FROM worker_profiles WHERE canonical_worker_key = ?',
+                        (key,),
+                    ).fetchone()
+
+                    if existing is None:
+                        cursor = connection.execute(
+                            '''
+                            INSERT INTO worker_profiles (name, job_category, score, reviewer, notes, rated_at, external_employee_id, canonical_name, canonical_worker_key)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''',
+                            (worker_name, category, score, reviewer, note, rated_at, external_employee_id, normalize_worker_name(worker_name), key),
+                        )
+                        worker_id = int(cursor.lastrowid)
+                        status = 201
+                    else:
+                        worker_id = int(existing['id'])
+                        connection.execute(
+                            '''
+                            UPDATE worker_profiles
+                            SET job_category = ?, score = ?, reviewer = ?, notes = ?, rated_at = ?, external_employee_id = ?, canonical_name = ?, canonical_worker_key = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            ''',
+                            (category, score, reviewer, note, rated_at, external_employee_id, normalize_worker_name(worker_name), key, worker_id),
+                        )
+                        status = 200
+
                     connection.execute(
                         '''
-                        UPDATE worker_profiles
-                        SET job_category = ?, score = ?, reviewer = ?, notes = ?, rated_at = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
+                        INSERT INTO worker_ratings (worker_id, job_category, score, reviewer, notes, rated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         ''',
-                        (category, score, reviewer, note, rated_at, worker_id),
+                        (worker_id, category, score, reviewer, note, rated_at),
                     )
-                    status = 200
+                    append_profile_history_entry(
+                        connection,
+                        worker_id,
+                        category,
+                        score,
+                        f'Rating logged by {reviewer}' + (f': {note}' if note else ''),
+                        rated_at,
+                    )
 
-                connection.execute(
-                    '''
-                    INSERT INTO worker_ratings (worker_id, job_category, score, reviewer, notes, rated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ''',
-                    (worker_id, category, score, reviewer, note, rated_at),
-                )
-                append_profile_history_entry(
-                    connection,
-                    worker_id,
-                    category,
-                    score,
-                    f'Rating logged by {reviewer}' + (f': {note}' if note else ''),
-                    rated_at,
-                )
-
-                row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
-                profile = build_profile(connection, row)
+                    row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
+                    profile = build_profile(connection, row)
+            except sqlite3.IntegrityError:
+                self._send_json(409, {'message': 'Duplicate worker key or employee ID detected. Merge duplicates or change employee ID.'})
+                return
 
             self._send_json(status, profile)
+            return
+
+        if path == '/api/admin/catalog':
+            payload = self._read_json_body()
+            job_types = payload.get('jobTypes', [])
+            criteria_names = payload.get('criteriaNames', [])
+
+            if not isinstance(job_types, list) or not isinstance(criteria_names, list):
+                self._send_json(400, {'message': 'jobTypes and criteriaNames must be arrays'})
+                return
+
+            normalize = lambda values: list({str(item or '').strip().lower(): str(item or '').strip() for item in values if str(item or '').strip()}.values())
+            normalized_job_types = normalize(job_types)
+            normalized_criteria = normalize(criteria_names)
+
+            with db_connection() as connection:
+                save_admin_list(connection, 'job_types', normalized_job_types)
+                save_admin_list(connection, 'criteria_names', normalized_criteria)
+
+            self._send_json(200, {'jobTypes': normalized_job_types, 'criteriaNames': normalized_criteria})
+            return
+
+        if path == '/api/profiles/merge':
+            payload = self._read_json_body()
+            source_id = int(payload.get('sourceProfileId', 0) or 0)
+            target_id = int(payload.get('targetProfileId', 0) or 0)
+
+            if not source_id or not target_id or source_id == target_id:
+                self._send_json(400, {'message': 'sourceProfileId and targetProfileId must be different numeric values'})
+                return
+
+            with db_connection() as connection:
+                source = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (source_id,)).fetchone()
+                target = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (target_id,)).fetchone()
+                if source is None or target is None:
+                    self._send_json(404, {'message': 'One or both profiles were not found'})
+                    return
+
+                connection.execute('UPDATE worker_ratings SET worker_id = ? WHERE worker_id = ?', (target_id, source_id))
+                connection.execute('UPDATE worker_profile_history SET worker_id = ? WHERE worker_id = ?', (target_id, source_id))
+                connection.execute('UPDATE worker_profile_notes SET worker_id = ? WHERE worker_id = ?', (target_id, source_id))
+                connection.execute('DELETE FROM worker_profiles WHERE id = ?', (source_id,))
+                connection.execute('UPDATE worker_profiles SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (target_id,))
+
+                row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (target_id,)).fetchone()
+                profile = build_profile(connection, row)
+
+            self._send_json(200, profile)
             return
 
         if path.startswith('/api/profiles/') and path.endswith('/ratings'):
@@ -583,6 +871,11 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 existing = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
                 if existing is None:
                     self._send_json(404, {'message': 'Profile not found'})
+                    return
+
+                allowed_error = validate_allowed_rating_values(connection, payload)
+                if allowed_error:
+                    self._send_json(400, {'message': allowed_error})
                     return
 
                 connection.execute(
@@ -639,6 +932,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 return
 
             name = str(payload.get('name', existing['name'])).strip()
+            external_employee_id = normalize_employee_id(payload.get('externalEmployeeId', existing['external_employee_id']))
+            key = canonical_worker_key(name, external_employee_id)
             category = str(payload.get('category', existing['job_category'] or '')).strip()
             reviewer = str(payload.get('reviewer', existing['reviewer'] or '')).strip()
             note = str(payload.get('note', payload.get('notes', existing['notes'] or ''))).strip()
@@ -675,13 +970,18 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 self._send_json(400, {'message': 'score must be a number between -5 and 5'})
                 return
 
+            allowed_error = validate_allowed_rating_values(connection, {'category': category, 'selectedCriteria': payload.get('selectedCriteria', [])})
+            if allowed_error:
+                self._send_json(400, {'message': allowed_error})
+                return
+
             connection.execute(
                 '''
                 UPDATE worker_profiles
-                SET name = ?, job_category = ?, score = ?, reviewer = ?, notes = ?, rated_at = ?, profile_status = ?, background_info = ?, updated_at = CURRENT_TIMESTAMP
+                SET name = ?, job_category = ?, score = ?, reviewer = ?, notes = ?, rated_at = ?, profile_status = ?, background_info = ?, external_employee_id = ?, canonical_name = ?, canonical_worker_key = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 ''',
-                (name, category, score, reviewer, note, rated_at, profile_status, background_info, int(profile_id)),
+                (name, category, score, reviewer, note, rated_at, profile_status, background_info, external_employee_id, normalize_worker_name(name), key, int(profile_id)),
             )
 
             if payload.get('logRating') is True:
