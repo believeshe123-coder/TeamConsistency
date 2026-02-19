@@ -8,6 +8,11 @@
   </head>
   <body>
     <main class="container">
+      <div class="page-tabs" role="tablist" aria-label="Main pages">
+        <button type="button" id="tab-ratings" class="tab active" role="tab" aria-selected="true">Ratings</button>
+        <button type="button" id="tab-admin" class="tab secondary" role="tab" aria-selected="false">Admin Settings</button>
+      </div>
+
       <section id="main-page">
         <header>
           <h1>Worker Rating Intake</h1>
@@ -34,6 +39,11 @@
               <label>
                 <span class="label-text">Predefined category rules</span>
                 <select id="rating-rule-select" aria-label="Select predefined rating rule"></select>
+              </label>
+
+              <label>
+                <span class="label-text">Common problems quick pick</span>
+                <select id="common-problem-select" aria-label="Select common problem"></select>
               </label>
 
               <label>
@@ -138,6 +148,40 @@
 
             <div class="form-actions">
               <button type="submit">Create Profile</button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section id="admin-page" class="hidden" aria-label="Admin settings page">
+        <section class="card">
+          <h2>Ranking Weights</h2>
+          <p class="hint">Adjust how profile status and common problems impact ranking scores.</p>
+
+          <form id="admin-settings-form">
+            <fieldset class="history-fieldset">
+              <legend>Status weights</legend>
+              <div id="status-weights" class="field-grid"></div>
+            </fieldset>
+
+            <fieldset class="history-fieldset">
+              <legend>Common problems</legend>
+              <div id="common-problems-list" class="history-list"></div>
+              <div class="field-grid">
+                <label>
+                  <span class="label-text">Problem</span>
+                  <input id="problem-name" type="text" placeholder="Was late" />
+                </label>
+                <label>
+                  <span class="label-text">Weight</span>
+                  <input id="problem-weight" type="number" step="0.1" value="-2" />
+                </label>
+              </div>
+              <button type="button" id="add-common-problem" class="secondary">Add common problem</button>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit">Save admin settings</button>
             </div>
           </form>
         </section>

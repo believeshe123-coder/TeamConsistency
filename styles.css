@@ -353,3 +353,32 @@ button.secondary {
     min-width: 0;
   }
 }
+
+.page-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.page-tabs .tab {
+  margin-top: 0;
+}
+
+.page-tabs .tab.active {
+  background: var(--primary);
+}
+
+.problem-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-subtle);
+}
+
+.problem-row button {
+  margin-top: 0;
+}

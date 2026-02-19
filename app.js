@@ -2,6 +2,7 @@ const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
 const PROFILE_STATUSES = ['Full-time', 'Part-time', 'New'];
 const RATING_RULES_KEY = 'worker-rating-rules-v1';
+const ADMIN_SETTINGS_KEY = 'worker-admin-settings-v1';
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -22,9 +23,18 @@ const ruleSelect = document.getElementById('rating-rule-select');
 const applyRuleButton = document.getElementById('apply-rating-rule');
 const mainPage = document.getElementById('main-page');
 const profilePage = document.getElementById('profile-page');
+const adminPage = document.getElementById('admin-page');
+const tabRatings = document.getElementById('tab-ratings');
+const tabAdmin = document.getElementById('tab-admin');
+const commonProblemSelect = document.getElementById('common-problem-select');
+const adminSettingsForm = document.getElementById('admin-settings-form');
+const statusWeightsContainer = document.getElementById('status-weights');
+const commonProblemsList = document.getElementById('common-problems-list');
+const addCommonProblemButton = document.getElementById('add-common-problem');
 
 let profilesCache = [];
 let ratingRules = [];
+let adminSettings = { statusWeights: {}, commonProblems: [] };
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
@@ -90,6 +100,27 @@ const statusFromScore = (score) => {
   if (score >= 8.4) return 'top-performer';
   if (score <= 5) return 'at-risk';
   return 'steady';
+};
+
+const getStatusWeight = (status) => Number(adminSettings.statusWeights?.[status] || 0);
+
+const getCommonProblemWeight = (noteText) => {
+  const normalized = String(noteText || '').trim().toLowerCase();
+  if (!normalized) return 0;
+
+  return (adminSettings.commonProblems || []).reduce((total, problem) => {
+    const name = String(problem.name || '').trim().toLowerCase();
+    if (!name) return total;
+    if (!normalized.includes(name)) return total;
+    return total + Number(problem.weight || 0);
+  }, 0);
+};
+
+const computeRankScore = (profile) => {
+  const statusWeight = getStatusWeight(profile.profileStatus);
+  const commonProblemPenalty = (profile.ratings || []).reduce((total, entry) => total + getCommonProblemWeight(entry.note), 0);
+  const rankScore = Number((Number(profile.overallScore || 0) + statusWeight + commonProblemPenalty).toFixed(2));
+  return { rankScore, statusWeight, commonProblemPenalty };
 };
 
 const statusLabelFromClass = (badgeClass) => {
@@ -194,7 +225,35 @@ const clearProfiles = async () => {
   }
 };
 
+const loadAdminSettings = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ADMIN_SETTINGS_KEY) || '{}');
+    const statusWeights = PROFILE_STATUSES.reduce((acc, status) => {
+      acc[status] = Number(parsed?.statusWeights?.[status] || 0);
+      return acc;
+    }, {});
+
+    const commonProblems = Array.isArray(parsed?.commonProblems)
+      ? parsed.commonProblems
+          .filter((item) => item && String(item.name || '').trim())
+          .map((item) => ({ id: String(item.id || crypto.randomUUID()), name: String(item.name).trim(), weight: Number(item.weight || 0) }))
+      : [];
+
+    return { statusWeights, commonProblems };
+  } catch {
+    return {
+      statusWeights: PROFILE_STATUSES.reduce((acc, status) => ({ ...acc, [status]: 0 }), {}),
+      commonProblems: [],
+    };
+  }
+};
+
+const saveAdminSettings = () => {
+  localStorage.setItem(ADMIN_SETTINGS_KEY, JSON.stringify(adminSettings));
+};
+
 const loadRatingRules = () => {
+
   try {
     const parsed = JSON.parse(localStorage.getItem(RATING_RULES_KEY) || '[]');
     if (!Array.isArray(parsed)) return [];
@@ -272,7 +331,7 @@ const renderHistorySummary = (historyEntries) => {
 const renderProfiles = (profiles) => {
   profilesList.innerHTML = '';
 
-  const sorted = [...profiles].sort((a, b) => b.overallScore - a.overallScore);
+  const sorted = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
   if (sorted.length === 0) {
     profilesList.innerHTML = '<li class="profile-item">No workers yet. Add a profile or rating to start building profiles.</li>';
     return;
@@ -284,6 +343,7 @@ const renderProfiles = (profiles) => {
     const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
     const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
     const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
+    const { rankScore, statusWeight, commonProblemPenalty } = computeRankScore(profile);
 
     item.innerHTML = `
       <strong>${profile.name}</strong>
@@ -292,6 +352,9 @@ const renderProfiles = (profiles) => {
         <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
         <span>Ratings: ${profile.ratings.length}</span>
         <span>Avg score: ${profile.overallScore}</span>
+        <span>Rank score: ${rankScore}</span>
+        <span>Status weight: ${statusWeight}</span>
+        <span>Common problem weight: ${commonProblemPenalty}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
       ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
@@ -356,6 +419,7 @@ const renderWorkerProfile = (profiles, workerId) => {
 
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+  const { rankScore, statusWeight, commonProblemPenalty } = computeRankScore(profile);
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
@@ -363,6 +427,9 @@ const renderWorkerProfile = (profiles, workerId) => {
         <span>Status: ${profile.profileStatus || '—'}</span>
         <span>Total ratings: ${profile.ratings.length}</span>
         <span>Overall avg: ${profile.overallScore}</span>
+        <span>Rank score: ${rankScore}</span>
+        <span>Status weight: ${statusWeight}</span>
+        <span>Common problem weight: ${commonProblemPenalty}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
       ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
@@ -379,10 +446,53 @@ const renderWorkerProfile = (profiles, workerId) => {
   `;
 };
 
+const renderCommonProblemSelect = () => {
+  if (!commonProblemSelect) return;
+
+  commonProblemSelect.innerHTML = '<option value="">No quick pick selected</option>';
+
+  (adminSettings.commonProblems || []).forEach((problem) => {
+    const option = document.createElement('option');
+    option.value = problem.id;
+    option.textContent = `${problem.name} (${problem.weight})`;
+    commonProblemSelect.appendChild(option);
+  });
+};
+
+const renderAdminSettings = () => {
+  if (!statusWeightsContainer || !commonProblemsList) return;
+
+  statusWeightsContainer.innerHTML = PROFILE_STATUSES.map((status) => `
+    <label>
+      <span class="label-text">${status}</span>
+      <input type="number" step="0.1" data-status-weight="${status}" value="${Number(adminSettings.statusWeights?.[status] || 0)}" />
+    </label>
+  `).join('');
+
+  commonProblemsList.innerHTML = '';
+
+  if (!(adminSettings.commonProblems || []).length) {
+    commonProblemsList.innerHTML = '<p class="hint">No common problems yet.</p>';
+  }
+
+  (adminSettings.commonProblems || []).forEach((problem) => {
+    const row = document.createElement('div');
+    row.className = 'problem-row';
+    row.innerHTML = `
+      <span><strong>${problem.name}</strong> (weight: ${problem.weight})</span>
+      <button type="button" class="secondary" data-delete-problem="${problem.id}">Delete</button>
+    `;
+    commonProblemsList.appendChild(row);
+  });
+
+  renderCommonProblemSelect();
+};
+
 const renderAll = (profiles) => {
   renderProfiles(profiles);
   renderWorkerSelector(profiles);
   renderWorkerProfile(profiles, workerSelector.value);
+  renderCommonProblemSelect();
 };
 
 const initializeCategoryOptions = () => {
@@ -572,6 +682,13 @@ const refreshFromBackend = async () => {
 const showProfilePage = (show) => {
   mainPage.classList.toggle('hidden', show);
   profilePage.classList.toggle('hidden', !show);
+  adminPage.classList.add('hidden');
+
+  tabRatings.classList.add('active');
+  tabAdmin.classList.remove('active');
+  tabRatings.setAttribute('aria-selected', 'true');
+  tabAdmin.setAttribute('aria-selected', 'false');
+
   if (show) {
     history.pushState({ profilePage: true }, '', '#add-profile');
     document.getElementById('profileName').focus();
@@ -580,14 +697,37 @@ const showProfilePage = (show) => {
   }
 };
 
-const buildRatingPayload = (data) => ({
-  workerName: data.get('workerName').toString().trim(),
-  category: data.get('category').toString().trim(),
-  score: Number(data.get('score')),
-  reviewer: data.get('reviewer').toString().trim(),
-  note: data.get('note').toString().trim(),
-  ratedAt: nowIso(),
-});
+const showAdminPage = (show) => {
+  mainPage.classList.toggle('hidden', show);
+  profilePage.classList.add('hidden');
+  adminPage.classList.toggle('hidden', !show);
+
+  tabRatings.classList.toggle('active', !show);
+  tabAdmin.classList.toggle('active', show);
+  tabRatings.setAttribute('aria-selected', String(!show));
+  tabAdmin.setAttribute('aria-selected', String(show));
+
+  if (show) {
+    history.pushState({ adminPage: true }, '', '#admin-settings');
+  } else if (window.location.hash === '#admin-settings') {
+    history.pushState({}, '', '#');
+  }
+};
+
+const buildRatingPayload = (data) => {
+  const selectedProblem = (adminSettings.commonProblems || []).find((problem) => problem.id === commonProblemSelect?.value);
+  const noteText = data.get('note').toString().trim();
+  const note = [selectedProblem?.name, noteText].filter(Boolean).join(' | ');
+
+  return {
+    workerName: data.get('workerName').toString().trim(),
+    category: data.get('category').toString().trim(),
+    score: Number(data.get('score')),
+    reviewer: data.get('reviewer').toString().trim(),
+    note,
+    ratedAt: nowIso(),
+  };
+};
 
 const submitRating = async (rating) => {
   const savedProfile = await saveRating(rating);
@@ -713,6 +853,63 @@ if (applyRuleButton) {
   });
 }
 
+if (tabRatings) {
+  tabRatings.addEventListener('click', () => {
+    showAdminPage(false);
+    showProfilePage(false);
+  });
+}
+
+if (tabAdmin) {
+  tabAdmin.addEventListener('click', () => {
+    showAdminPage(true);
+  });
+}
+
+if (addCommonProblemButton) {
+  addCommonProblemButton.addEventListener('click', () => {
+    const nameField = document.getElementById('problem-name');
+    const weightField = document.getElementById('problem-weight');
+    const name = nameField.value.trim();
+    const weight = Number(weightField.value);
+
+    if (!name || Number.isNaN(weight)) return;
+
+    adminSettings.commonProblems.push({ id: crypto.randomUUID(), name, weight });
+    nameField.value = '';
+    weightField.value = '-2';
+    renderAdminSettings();
+  });
+}
+
+if (commonProblemsList) {
+  commonProblemsList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const problemId = target.getAttribute('data-delete-problem');
+    if (!problemId) return;
+
+    adminSettings.commonProblems = adminSettings.commonProblems.filter((problem) => problem.id !== problemId);
+    renderAdminSettings();
+  });
+}
+
+if (adminSettingsForm) {
+  adminSettingsForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    PROFILE_STATUSES.forEach((status) => {
+      const field = statusWeightsContainer.querySelector(`[data-status-weight="${status}"]`);
+      adminSettings.statusWeights[status] = Number(field?.value || 0);
+    });
+
+    saveAdminSettings();
+    renderAdminSettings();
+    renderAll(profilesCache);
+  });
+}
+
 addProfileButton.addEventListener('click', () => {
   showProfilePage(true);
 });
@@ -776,16 +973,30 @@ clearButton.addEventListener('click', async () => {
 });
 
 window.addEventListener('popstate', () => {
-  showProfilePage(window.location.hash === '#add-profile');
+  const hash = window.location.hash;
+  if (hash === '#admin-settings') {
+    showAdminPage(true);
+    return;
+  }
+
+  showAdminPage(false);
+  showProfilePage(hash === '#add-profile');
 });
 
+adminSettings = loadAdminSettings();
 ratingRules = loadRatingRules();
 initializeCategoryOptions();
 initializeStatusOptions();
 renderRules();
+renderAdminSettings();
 resetHistoryEntries();
 resetNoteEntries();
-showProfilePage(window.location.hash === '#add-profile');
+if (window.location.hash === '#admin-settings') {
+  showAdminPage(true);
+} else {
+  showAdminPage(false);
+  showProfilePage(window.location.hash === '#add-profile');
+}
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });
