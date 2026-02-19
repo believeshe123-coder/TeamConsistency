@@ -225,6 +225,22 @@ button.secondary {
   outline-offset: -4px;
 }
 
+.page-tabs .stealth-admin-tab {
+  justify-self: end;
+  min-width: 34px;
+  width: 34px;
+  padding: 2px 0;
+  background: #cfd3df;
+  color: #4f566b;
+  border-color: #8e95ab;
+  opacity: 0.7;
+}
+
+.page-tabs .stealth-admin-tab:hover,
+.page-tabs .stealth-admin-tab:focus-visible {
+  opacity: 1;
+}
+
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
@@ -432,6 +448,49 @@ select:user-invalid {
   padding: 1px 7px;
 }
 
+.badge-button {
+  margin-top: 0;
+  min-height: auto;
+  line-height: 1.2;
+}
+
+.pill-popup {
+  margin-top: 6px;
+  padding: 6px 8px;
+  max-width: 320px;
+  border: 1px solid var(--border);
+  background: #eef1fb;
+  box-shadow: inset 1px 1px 0 #fff;
+}
+
+.pill-popup ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.insight-tab-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(180px, 1.4fr) auto;
+  gap: 6px;
+  align-items: start;
+  padding: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+
+.insight-tab-row textarea {
+  min-height: 44px;
+}
+
+.insight-tab-actions {
+  display: grid;
+  gap: 4px;
+}
+
+.insight-tab-actions button {
+  margin-top: 0;
+}
+
 .top-performer {
   background: var(--success-bg);
   color: var(--success-text);
@@ -501,6 +560,10 @@ select:user-invalid {
   }
 
   .quick-worker-add {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-tab-row {
     grid-template-columns: 1fr;
   }
 }

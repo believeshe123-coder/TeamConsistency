@@ -10,7 +10,7 @@
     <main class="container">
       <div class="page-tabs" role="tablist" aria-label="Main pages">
         <button type="button" id="tab-ratings" class="tab active" role="tab" aria-selected="true">Ratings</button>
-        <button type="button" id="tab-admin" class="tab secondary" role="tab" aria-selected="false">Admin Settings</button>
+        <button type="button" id="tab-admin" class="tab secondary stealth-admin-tab" role="tab" aria-selected="false" aria-label="Open admin settings" title="Admin">⚙</button>
       </div>
 
       <section id="main-page">
@@ -135,7 +135,10 @@
 
       <section id="admin-page" class="hidden" aria-label="Admin settings page">
         <section class="card">
-          <h2>Admin Settings</h2>
+          <div class="section-header">
+            <h2>Admin Settings</h2>
+            <button type="button" id="lock-admin" class="secondary">Lock admin</button>
+          </div>
           <p class="hint">Update scoring rules and form options used by the main ratings page.</p>
 
           <form id="admin-settings-form">
@@ -222,6 +225,52 @@
                 </div>
               </div>
               <button type="button" id="add-rating-criterion" class="secondary">Add checklist item</button>
+            </fieldset>
+
+            <fieldset class="history-fieldset admin-section">
+              <legend>Profile insight tabs</legend>
+              <p class="hint">Add or edit the pill tabs shown next to each worker status badge. Choose what content appears and whether the popup can auto-open when a flag is active.</p>
+              <div id="insight-tabs-list" class="history-list"></div>
+              <div class="field-grid">
+                <label>
+                  <span class="label-text">Tab label</span>
+                  <input id="insight-tab-label" type="text" placeholder="Strength Tags" />
+                </label>
+                <label>
+                  <span class="label-text">Content type</span>
+                  <select id="insight-tab-type">
+                    <option value="strength">Strength Tags (top job types)</option>
+                    <option value="trend">Trend Flags (late / professionalism / NCNS)</option>
+                    <option value="custom">Custom text</option>
+                  </select>
+                </label>
+                <label>
+                  <span class="label-text">Auto-open mode</span>
+                  <select id="insight-tab-trigger">
+                    <option value="manual">Manual only (on click)</option>
+                    <option value="auto-if-flagged">Auto-open when issues are detected</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span class="label-text">Custom popup lines (one per line)</span>
+                <textarea id="insight-tab-custom" rows="3" placeholder="Great attendance
+Consistent picker pace"></textarea>
+              </label>
+              <button type="button" id="add-insight-tab" class="secondary">Add insight tab</button>
+            </fieldset>
+
+            <fieldset class="history-fieldset admin-section">
+              <legend>Admin access</legend>
+              <p class="hint">Set a password to protect admin settings. Leave blank to keep current password.</p>
+              <div class="field-grid">
+                <label>
+                  <span class="label-text">New admin password</span>
+                  <input id="admin-password" type="password" placeholder="Set admin password" autocomplete="new-password" />
+                </label>
+              </div>
+              <button type="button" id="save-admin-password" class="secondary">Save password</button>
+              <p id="admin-access-feedback" class="hint" aria-live="polite"></p>
             </fieldset>
 
             <div class="form-actions">
