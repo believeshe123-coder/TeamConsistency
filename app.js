@@ -25,9 +25,66 @@ const profilePage = document.getElementById('profile-page');
 
 let profilesCache = [];
 let ratingRules = [];
+const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
 const nowIso = () => new Date().toISOString();
+
+const loadLocalProfiles = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_PROFILES_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveLocalProfiles = (profiles) => {
+  localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
+};
+
+const recalculateProfileFields = (profile) => {
+  const ratings = Array.isArray(profile.ratings) ? profile.ratings : [];
+  const jobCategories = [...new Set(ratings.map((entry) => entry.category).filter(Boolean))];
+  const overallScore = ratings.length
+    ? Number((ratings.reduce((total, entry) => total + Number(entry.score || 0), 0) / ratings.length).toFixed(2))
+    : 0;
+
+  return {
+    ...profile,
+    jobCategories,
+    overallScore,
+  };
+};
+
+const upsertLocalProfile = (incomingProfile) => {
+  const profiles = loadLocalProfiles();
+  const normalizedName = String(incomingProfile.name || '').trim().toLowerCase();
+  const existingIndex = profiles.findIndex((entry) => String(entry.name || '').trim().toLowerCase() === normalizedName);
+  const nextId = existingIndex >= 0 ? profiles[existingIndex].id : Date.now();
+  const previous = existingIndex >= 0 ? profiles[existingIndex] : null;
+
+  const merged = recalculateProfileFields({
+    id: nextId,
+    name: incomingProfile.name,
+    profileStatus: incomingProfile.status || incomingProfile.profileStatus || '',
+    backgroundInfo: incomingProfile.background || incomingProfile.backgroundInfo || '',
+    ratings: previous?.ratings || [],
+    historyEntries: incomingProfile.historyEntries || [],
+    profileNotes: incomingProfile.profileNotes || [],
+    createdAt: previous?.createdAt || nowIso(),
+    updatedAt: nowIso(),
+  });
+
+  if (existingIndex >= 0) {
+    profiles[existingIndex] = merged;
+  } else {
+    profiles.push(merged);
+  }
+
+  saveLocalProfiles(profiles);
+  return merged;
+};
 
 const statusFromScore = (score) => {
   if (score >= 8.4) return 'top-performer';
@@ -43,44 +100,98 @@ const statusLabelFromClass = (badgeClass) => {
 };
 
 const fetchProfiles = async () => {
-  const response = await fetch(`${API_BASE}/profiles`);
-  if (!response.ok) throw new Error('Unable to load profiles');
-  return response.json();
+  try {
+    const response = await fetch(`${API_BASE}/profiles`);
+    if (!response.ok) throw new Error('Unable to load profiles');
+    return response.json();
+  } catch {
+    return loadLocalProfiles();
+  }
 };
 
 const saveRating = async (rating) => {
-  const response = await fetch(`${API_BASE}/profiles`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(rating),
-  });
+  try {
+    const response = await fetch(`${API_BASE}/profiles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rating),
+    });
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || 'Unable to save rating');
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.message || 'Unable to save rating');
+    }
+
+    return response.json();
+  } catch {
+    const profiles = loadLocalProfiles();
+    const normalizedName = String(rating.workerName || '').trim().toLowerCase();
+    const profileIndex = profiles.findIndex((entry) => String(entry.name || '').trim().toLowerCase() === normalizedName);
+    const now = rating.ratedAt || nowIso();
+    const ratingEntry = {
+      id: Date.now(),
+      category: rating.category,
+      score: Number(rating.score),
+      reviewer: rating.reviewer,
+      note: rating.note || '',
+      ratedAt: now,
+    };
+
+    let profile;
+    if (profileIndex >= 0) {
+      profile = {
+        ...profiles[profileIndex],
+        ratings: [...(profiles[profileIndex].ratings || []), ratingEntry],
+        updatedAt: now,
+      };
+      profiles[profileIndex] = recalculateProfileFields(profile);
+      profile = profiles[profileIndex];
+    } else {
+      profile = recalculateProfileFields({
+        id: Date.now(),
+        name: rating.workerName,
+        profileStatus: '',
+        backgroundInfo: '',
+        ratings: [ratingEntry],
+        historyEntries: [],
+        profileNotes: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+      profiles.push(profile);
+    }
+
+    saveLocalProfiles(profiles);
+    return profile;
   }
-
-  return response.json();
 };
 
 const addProfile = async (profile) => {
-  const response = await fetch(`${API_BASE}/profiles/create`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(profile),
-  });
+  try {
+    const response = await fetch(`${API_BASE}/profiles/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || 'Unable to create profile');
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.message || 'Unable to create profile');
+    }
+
+    return response.json();
+  } catch {
+    return upsertLocalProfile(profile);
   }
-
-  return response.json();
 };
 
 const clearProfiles = async () => {
-  const response = await fetch(`${API_BASE}/profiles`, { method: 'DELETE' });
-  if (!response.ok) throw new Error('Unable to clear profiles');
+  try {
+    const response = await fetch(`${API_BASE}/profiles`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Unable to clear profiles');
+  } catch {
+    saveLocalProfiles([]);
+  }
 };
 
 const loadRatingRules = () => {
@@ -406,16 +517,14 @@ const buildNoteEntryRow = (entry = {}) => {
 
 const resetHistoryEntries = (entries = []) => {
   profileHistoryList.innerHTML = '';
-  const sourceEntries = entries.length ? entries : [{}];
-  sourceEntries.forEach((entry) => {
+  entries.forEach((entry) => {
     profileHistoryList.appendChild(buildHistoryEntryRow(entry));
   });
 };
 
 const resetNoteEntries = (entries = []) => {
   profileNotesList.innerHTML = '';
-  const sourceEntries = entries.length ? entries : [{}];
-  sourceEntries.forEach((entry) => {
+  entries.forEach((entry) => {
     profileNotesList.appendChild(buildNoteEntryRow(entry));
   });
 };
