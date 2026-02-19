@@ -15,13 +15,13 @@
 
       <section id="main-page">
         <header>
-          <h1>Worker Rating Intake</h1>
-          <p>Capture standardized performance ratings and maintain long-term worker profiles.</p>
+          <h1>Worker Ratings Dashboard</h1>
+          <p>Use this page to log ratings quickly, then review profile history and trends in one place.</p>
         </header>
 
         <section class="card">
-          <h2>Add Rating</h2>
-          <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>.</p>
+          <h2>1) Add a New Rating</h2>
+          <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>. Fill worker details, score at least one checklist item, and save.</p>
           <form id="rating-form">
             <div class="field-grid">
               <label>
@@ -44,8 +44,8 @@
             </p>
 
             <fieldset class="history-fieldset">
-              <legend>How was our worker?</legend>
-              <p class="hint">Check each item you want to rate, then pick where they landed from bad (left) to good (right).</p>
+              <legend>Rating checklist</legend>
+              <p class="hint">Enable each row you want to score, then pick a level from low (left) to high (right).</p>
               <div id="criterion-ratings" class="criteria-list"></div>
               <p id="score-error" class="field-error">Pick at least one checklist item before saving.</p>
             </fieldset>
@@ -63,19 +63,19 @@
 
         <div class="right-column-stack">
           <section class="card">
-            <h2>Retrieve Worker Profile</h2>
+            <h2>2) Review a Worker Profile</h2>
             <label>
               <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
               <select id="worker-selector" aria-label="Select worker profile"></select>
             </label>
             <div id="worker-profile-detail" class="profile-detail">
-              <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
+              <p class="hint">Choose a worker to inspect category-level history, note timeline, and score trend.</p>
             </div>
           </section>
 
           <section class="card">
             <div class="section-header">
-              <h2>Worker Profiles</h2>
+              <h2>3) Manage Profiles</h2>
               <div class="section-actions">
                 <button type="button" id="add-profile" class="secondary">Add Profile</button>
                 <button type="button" id="clear-data" class="secondary">Clear all</button>
@@ -143,17 +143,19 @@
 
       <section id="admin-page" class="hidden" aria-label="Admin settings page">
         <section class="card">
-          <h2>Ranking Weights</h2>
-          <p class="hint">Adjust how profile status and common problems impact ranking scores.</p>
+          <h2>Admin Settings</h2>
+          <p class="hint">Update scoring rules and form options used by the main ratings page.</p>
 
           <form id="admin-settings-form">
-            <fieldset class="history-fieldset">
+            <fieldset class="history-fieldset admin-section">
               <legend>Status weights</legend>
+              <p class="hint">Higher values improve a profile's rank. Negative values reduce rank.</p>
               <div id="status-weights" class="field-grid"></div>
             </fieldset>
 
-            <fieldset class="history-fieldset">
+            <fieldset class="history-fieldset admin-section">
               <legend>Job types</legend>
+              <p class="hint">These options appear in the "Job type" dropdown when creating ratings.</p>
               <div id="job-types-list" class="history-list"></div>
               <div class="field-grid">
                 <label>
@@ -164,51 +166,68 @@
               <button type="button" id="add-job-type" class="secondary">Add job type</button>
             </fieldset>
 
-            <fieldset class="history-fieldset">
-              <legend>Common problems</legend>
-              <div id="common-problems-list" class="history-list"></div>
-              <div class="field-grid">
-                <label>
-                  <span class="label-text">Problem</span>
-                  <input id="problem-name" type="text" placeholder="Was late" />
-                </label>
-                <label>
-                  <span class="label-text">Weight</span>
-                  <input id="problem-weight" type="number" step="0.1" value="-2" />
-                </label>
-              </div>
-              <button type="button" id="add-common-problem" class="secondary">Add common problem</button>
-            </fieldset>
-
-            <fieldset class="history-fieldset">
+            <fieldset class="history-fieldset admin-section">
               <legend>Rating checklist items</legend>
-              <p class="hint">Add new checklist rows for the main rating form.</p>
+              <p class="hint">These rows control what reviewers can score on the main ratings page.</p>
               <div id="rating-criteria-list" class="history-list"></div>
               <div class="field-grid">
                 <label>
                   <span class="label-text">Item name</span>
                   <input id="criterion-name" type="text" placeholder="Late / on time" />
                 </label>
-                <label>
-                  <span class="label-text">Very bad label</span>
-                  <input id="criterion-very-bad" type="text" placeholder="Extremely late" />
-                </label>
-                <label>
-                  <span class="label-text">A little bad label</span>
-                  <input id="criterion-little-bad" type="text" placeholder="A bit late" />
-                </label>
-                <label>
-                  <span class="label-text">Neutral label</span>
-                  <input id="criterion-neutral" type="text" placeholder="On time" />
-                </label>
-                <label>
-                  <span class="label-text">A little good label</span>
-                  <input id="criterion-little-good" type="text" placeholder="Slightly early" />
-                </label>
-                <label>
-                  <span class="label-text">Very good label</span>
-                  <input id="criterion-very-good" type="text" placeholder="Extremely early" />
-                </label>
+              </div>
+
+              <div class="criteria-config-list">
+                <div class="criterion-config-row">
+                  <label>
+                    <span class="label-text">Very bad label</span>
+                    <input id="criterion-very-bad" type="text" placeholder="Extremely late" />
+                  </label>
+                  <label class="weight-field">
+                    <span class="label-text">Weight</span>
+                    <input id="criterion-weight-very-bad" type="number" step="0.1" value="-5" />
+                  </label>
+                </div>
+                <div class="criterion-config-row">
+                  <label>
+                    <span class="label-text">A little bad label</span>
+                    <input id="criterion-little-bad" type="text" placeholder="A bit late" />
+                  </label>
+                  <label class="weight-field">
+                    <span class="label-text">Weight</span>
+                    <input id="criterion-weight-little-bad" type="number" step="0.1" value="-2.5" />
+                  </label>
+                </div>
+                <div class="criterion-config-row">
+                  <label>
+                    <span class="label-text">Neutral label</span>
+                    <input id="criterion-neutral" type="text" placeholder="On time" />
+                  </label>
+                  <label class="weight-field">
+                    <span class="label-text">Weight</span>
+                    <input id="criterion-weight-neutral" type="number" step="0.1" value="0" />
+                  </label>
+                </div>
+                <div class="criterion-config-row">
+                  <label>
+                    <span class="label-text">A little good label</span>
+                    <input id="criterion-little-good" type="text" placeholder="Slightly early" />
+                  </label>
+                  <label class="weight-field">
+                    <span class="label-text">Weight</span>
+                    <input id="criterion-weight-little-good" type="number" step="0.1" value="2.5" />
+                  </label>
+                </div>
+                <div class="criterion-config-row">
+                  <label>
+                    <span class="label-text">Very good label</span>
+                    <input id="criterion-very-good" type="text" placeholder="Extremely early" />
+                  </label>
+                  <label class="weight-field">
+                    <span class="label-text">Weight</span>
+                    <input id="criterion-weight-very-good" type="number" step="0.1" value="5" />
+                  </label>
+                </div>
               </div>
               <button type="button" id="add-rating-criterion" class="secondary">Add checklist item</button>
             </fieldset>
