@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import math
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -242,6 +243,79 @@ def fetch_profile_notes(connection: sqlite3.Connection, worker_id: int) -> list[
     return [dict(row) for row in rows]
 
 
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def to_five_point_scale(raw_score: float) -> float:
+    return round((clamp(raw_score, -5, 5) + 5) / 2, 2)
+
+
+def is_punctuality_category(category: str) -> bool:
+    normalized = category.strip().lower()
+    return any(token in normalized for token in ('punctuality', 'attendance', 'timeliness', 'late'))
+
+
+def score_profile_metrics(ratings: list[dict]) -> dict:
+    if not ratings:
+        return {
+            'normalizedOverallScore': 0,
+            'consistencyScore': 0,
+            'currentPositiveStreak': 0,
+            'bestPositiveStreak': 0,
+            'lateTrendWeightApplied': False,
+            'lateTrend': 'No punctuality trend yet',
+        }
+
+    sorted_ratings = sorted(ratings, key=lambda entry: (entry.get('ratedAt') or '', entry.get('id') or 0))
+    punctuality = [entry for entry in sorted_ratings if is_punctuality_category(str(entry.get('category', '')))]
+    recent_punctuality = punctuality[-3:]
+    late_trend_applied = len(recent_punctuality) == 3 and all(float(entry['score']) <= 0 for entry in recent_punctuality)
+
+    weighted_scores: list[float] = []
+    normalized_scores: list[float] = []
+    current_streak = 0
+    best_streak = 0
+
+    for entry in sorted_ratings:
+        raw_score = float(entry['score'])
+        normalized_score = to_five_point_scale(raw_score)
+        normalized_scores.append(normalized_score)
+
+        if normalized_score >= 3.5:
+            current_streak += 1
+            best_streak = max(best_streak, current_streak)
+        else:
+            current_streak = 0
+
+        multiplier = 2 if late_trend_applied and is_punctuality_category(str(entry.get('category', ''))) else 1
+        weighted_scores.append(raw_score * multiplier)
+
+    weighted_average = sum(weighted_scores) / len(weighted_scores)
+    normalized_overall_score = to_five_point_scale(weighted_average)
+    streak_bonus = min(0.5, current_streak * 0.1)
+    normalized_overall_score = round(clamp(normalized_overall_score + streak_bonus, 0, 5), 2)
+
+    mean_score = sum(normalized_scores) / len(normalized_scores)
+    variance = sum((score - mean_score) ** 2 for score in normalized_scores) / len(normalized_scores)
+    consistency_score = round(clamp(100 - (math.sqrt(variance) * 20), 0, 100), 2)
+
+    late_trend = 'No punctuality trend yet'
+    if late_trend_applied:
+        late_trend = 'Always late trend detected; punctuality scores are doubled'
+    elif recent_punctuality:
+        late_trend = 'Punctuality is being monitored'
+
+    return {
+        'normalizedOverallScore': normalized_overall_score,
+        'consistencyScore': consistency_score,
+        'currentPositiveStreak': current_streak,
+        'bestPositiveStreak': best_streak,
+        'lateTrendWeightApplied': late_trend_applied,
+        'lateTrend': late_trend,
+    }
+
+
 def replace_profile_notes(connection: sqlite3.Connection, worker_id: int, notes: list[dict]) -> None:
     connection.execute('DELETE FROM worker_profile_notes WHERE worker_id = ?', (worker_id,))
     for note_entry in notes:
@@ -259,7 +333,7 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
     history_entries = fetch_profile_history(connection, int(profile_row['id']))
     profile_notes = fetch_profile_notes(connection, int(profile_row['id']))
     categories = sorted({entry['category'] for entry in ratings})
-    overall_score = round(sum(float(entry['score']) for entry in ratings) / len(ratings), 2) if ratings else 0
+    metrics = score_profile_metrics(ratings)
 
     return {
         'id': profile_row['id'],
@@ -277,7 +351,8 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
         'historyEntries': history_entries,
         'profileNotes': profile_notes,
         'jobCategories': categories,
-        'overallScore': overall_score,
+        'overallScore': metrics['normalizedOverallScore'],
+        'analytics': metrics,
     }
 
 

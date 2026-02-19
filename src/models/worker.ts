@@ -20,16 +20,22 @@ export interface WorkerProfile {
 }
 
 export const STATUS_THRESHOLDS = {
-  topPerformerMin: 4.2,
-  atRiskMax: 2.5,
+  topPerformerMin: 4,
+  atRiskMax: 2,
 };
+
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+export function toFivePointScale(score: number): number {
+  return Number((((clamp(score, -5, 5) + 5) / 2)).toFixed(2));
+}
 
 export function computeOverallScore(ratings: WorkerRatingEntry[]): number {
   if (ratings.length === 0) {
     return 0;
   }
 
-  const total = ratings.reduce((sum, rating) => sum + rating.score, 0);
+  const total = ratings.reduce((sum, rating) => sum + toFivePointScale(rating.score), 0);
   return Number((total / ratings.length).toFixed(2));
 }
 
