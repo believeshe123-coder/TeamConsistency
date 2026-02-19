@@ -185,6 +185,16 @@ def validate_profile_payload(payload: dict) -> str | None:
     return validate_history_entries(history_entries)
 
 
+def normalize_history_entries(payload: dict, default: list[dict] | None = None) -> list[dict]:
+    entries = payload.get('historyEntries', payload.get('history', default if default is not None else []))
+    return entries or []
+
+
+def normalize_profile_notes(payload: dict, default: list[dict] | None = None) -> list[dict]:
+    notes = payload.get('profileNotes', payload.get('notesTimeline', default if default is not None else []))
+    return notes or []
+
+
 def fetch_ratings(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
     rows = connection.execute(
         '''
@@ -602,11 +612,27 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             profile_status = str(payload.get('status', existing['profile_status'] or '')).strip()
             background_info = str(payload.get('background', payload.get('backgroundInfo', existing['background_info'] or ''))).strip()
             rated_at = payload.get('ratedAt') or existing['rated_at'] or now_iso()
+            history_entries = normalize_history_entries(payload)
+            profile_notes = normalize_profile_notes(payload)
 
-            try:
-                score = float(payload.get('score', existing['score']))
-            except (TypeError, ValueError):
-                score = None
+            history_error = validate_history_entries(history_entries)
+            if history_error:
+                self._send_json(400, {'message': history_error})
+                return
+
+            notes_error = validate_profile_notes(profile_notes)
+            if notes_error:
+                self._send_json(400, {'message': notes_error})
+                return
+
+            existing_score = existing['score']
+            if payload.get('score') is None and existing_score is None:
+                score = 0.0
+            else:
+                try:
+                    score = float(payload.get('score', existing_score))
+                except (TypeError, ValueError):
+                    score = None
 
             if len(name) < 2:
                 self._send_json(400, {'message': 'name must be at least 2 characters'})
@@ -633,6 +659,9 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                     ''',
                     (int(profile_id), category, score, reviewer, note, rated_at),
                 )
+
+            replace_profile_history(connection, int(profile_id), history_entries)
+            replace_profile_notes(connection, int(profile_id), profile_notes)
 
             row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (int(profile_id),)).fetchone()
             profile = build_profile(connection, row)
