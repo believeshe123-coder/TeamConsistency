@@ -139,7 +139,7 @@
             <h2>Admin Settings</h2>
             <button type="button" id="lock-admin" class="secondary">Lock admin</button>
           </div>
-          <p class="hint">Update scoring rules and form options used by the main ratings page.</p>
+          <p class="hint">Update scoring rules and form options used by the main ratings page. Sections below are ordered in the same flow used during ratings.</p>
 
           <form id="admin-settings-form">
             <fieldset class="history-fieldset admin-section">
@@ -158,16 +158,18 @@
                   <input id="job-type-name" type="text" placeholder="Loading dock" />
                 </label>
               </div>
-              <button type="button" id="add-job-type" class="secondary">Add job type</button>
+              <div class="section-actions admin-inline-actions">
+                <button type="button" id="add-job-type" class="secondary">Add job type</button>
+              </div>
             </fieldset>
 
             <fieldset class="history-fieldset admin-section">
-              <legend>Rating checklist items</legend>
-              <p class="hint">These rows control what reviewers can score on the main ratings page.</p>
+              <legend>Performance rating criteria</legend>
+              <p class="hint">These criteria control what reviewers score on the main ratings page.</p>
               <div id="rating-criteria-list" class="history-list"></div>
               <div class="field-grid">
                 <label>
-                  <span class="label-text">Item name</span>
+                  <span class="label-text">Criteria name</span>
                   <input id="criterion-name" type="text" placeholder="Late / on time" />
                 </label>
               </div>
@@ -224,40 +226,65 @@
                   </label>
                 </div>
               </div>
-              <button type="button" id="add-rating-criterion" class="secondary">Add checklist item</button>
+              <div class="section-actions admin-inline-actions">
+                <button type="button" id="add-rating-criterion" class="secondary">Add checklist item</button>
+              </div>
             </fieldset>
 
             <fieldset class="history-fieldset admin-section">
-              <legend>Profile insight tabs</legend>
-              <p class="hint">Add or edit the pill tabs shown next to each worker status badge. Choose what content appears and whether the popup can auto-open when a flag is active.</p>
-              <div id="insight-tabs-list" class="history-list"></div>
-              <div class="field-grid">
+              <legend>Checklist math (behind the scenes)</legend>
+              <p class="hint">Build weight multipliers, tags, and insights based on report counts for a checklist item + label pair.</p>
+              <div id="checklist-math-rules-list" class="history-list"></div>
+              <div class="checklist-math-builder">
                 <label>
-                  <span class="label-text">Tab label</span>
-                  <input id="insight-tab-label" type="text" placeholder="Strength Tags" />
+                  <span class="label-text">Main checklist item</span>
+                  <select id="math-main-criterion"></select>
                 </label>
                 <label>
-                  <span class="label-text">Content type</span>
-                  <select id="insight-tab-type">
-                    <option value="strength">Strength Tags (top job types)</option>
-                    <option value="trend">Trend Flags (late / professionalism / NCNS)</option>
-                    <option value="custom">Custom text</option>
-                  </select>
+                  <span class="label-text">Label</span>
+                  <select id="math-label"></select>
                 </label>
                 <label>
-                  <span class="label-text">Auto-open mode</span>
-                  <select id="insight-tab-trigger">
-                    <option value="manual">Manual only (on click)</option>
-                    <option value="auto-if-flagged">Auto-open when issues are detected</option>
-                  </select>
+                  <span class="label-text"># of reports</span>
+                  <input id="math-report-range" type="text" placeholder="1-2, 3+, -2, 5" />
+                </label>
+                <label>
+                  <span class="label-text">Weight times</span>
+                  <input id="math-weight-multiplier" type="number" step="0.1" min="0" value="1" />
+                </label>
+                <label>
+                  <span class="label-text">Tag (optional)</span>
+                  <select id="math-tag"></select>
+                </label>
+                <label class="full-width">
+                  <span class="label-text">Insight (optional)</span>
+                  <textarea id="math-insight" rows="2" placeholder="Added to same main + label as this rule."></textarea>
                 </label>
               </div>
-              <label>
-                <span class="label-text">Custom popup lines (one per line)</span>
-                <textarea id="insight-tab-custom" rows="3" placeholder="Great attendance
-Consistent picker pace"></textarea>
-              </label>
-              <button type="button" id="add-insight-tab" class="secondary">Add insight tab</button>
+              <div class="section-actions">
+                <button type="button" id="add-checklist-math-rule" class="secondary">Add tag + tab rule</button>
+              </div>
+            </fieldset>
+
+
+
+            <fieldset class="history-fieldset admin-section">
+              <legend>Add tags</legend>
+              <p class="hint">Create reusable tags for checklist math rules. A default <strong>Steady</strong> tag is always included.</p>
+              <div id="custom-tags-list" class="history-list"></div>
+              <div class="tag-builder-grid">
+                <label>
+                  <span class="label-text">Tag name</span>
+                  <input id="custom-tag-name" type="text" placeholder="Terminate" />
+                </label>
+                <label>
+                  <span class="label-text">Tab color</span>
+                  <input id="custom-tag-color" type="color" value="#5f8df5" />
+                </label>
+              </div>
+              <div class="section-actions admin-inline-actions">
+                <button type="button" id="add-custom-tag" class="secondary">Add tag</button>
+              </div>
             </fieldset>
 
             <fieldset class="history-fieldset admin-section">

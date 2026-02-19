@@ -302,6 +302,63 @@ select:user-invalid {
   font-weight: 700;
 }
 
+
+.admin-section legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.admin-section-toggle {
+  margin: 0;
+  min-height: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.admin-section.is-collapsed > :not(legend) {
+  display: none;
+}
+
+
+
+#admin-settings-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+#admin-settings-form .admin-section {
+  margin-top: 0;
+}
+
+#admin-settings-form .admin-section > .hint {
+  margin-bottom: var(--space-2);
+}
+
+#admin-settings-form .history-list {
+  margin-bottom: var(--space-2);
+}
+
+#admin-settings-form .problem-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#admin-settings-form .problem-row > span {
+  line-height: 1.35;
+}
+
+.admin-inline-actions {
+  justify-content: flex-start;
+}
+
+.admin-inline-actions .secondary {
+  margin-top: 0;
+}
+
 .criteria-config-list {
   display: grid;
   gap: var(--space-2);
@@ -442,53 +499,27 @@ select:user-invalid {
   font-size: 11px;
   font-weight: 700;
   border: 1px solid currentColor;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 7px;
 }
 
-.badge-button {
-  margin-top: 0;
-  min-height: auto;
-  line-height: 1.2;
-}
 
-.pill-popup {
-  margin-top: 6px;
-  padding: 6px 8px;
-  max-width: 320px;
-  border: 1px solid var(--border);
-  background: #eef1fb;
-  box-shadow: inset 1px 1px 0 #fff;
-}
-
-.pill-popup ul {
-  margin: 4px 0 0;
-  padding-left: 16px;
-}
-
-.insight-tab-row {
+.tag-builder-grid {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(180px, 1.4fr) auto;
-  gap: 6px;
-  align-items: start;
-  padding: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface-subtle);
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: var(--space-2);
 }
 
-.insight-tab-row textarea {
-  min-height: 44px;
+.custom-tag-preview {
+  margin-right: 6px;
 }
 
-.insight-tab-actions {
+.checklist-math-builder {
   display: grid;
-  gap: 4px;
+  gap: var(--space-2);
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
 }
 
-.insight-tab-actions button {
-  margin-top: 0;
+.checklist-math-builder .full-width {
+  grid-column: 1 / -1;
 }
 
 .top-performer {
@@ -563,7 +594,11 @@ select:user-invalid {
     grid-template-columns: 1fr;
   }
 
-  .insight-tab-row {
+  .checklist-math-builder {
+    grid-template-columns: 1fr;
+  }
+
+  .tag-builder-grid {
     grid-template-columns: 1fr;
   }
 }
