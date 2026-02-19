@@ -6,7 +6,6 @@ const ADMIN_SETTINGS_KEY = 'worker-admin-settings-v1';
 const RATING_CRITERIA_KEY = 'worker-rating-criteria-v1';
 const SCORE_CHOICES = [-5, -2.5, 0, 2.5, 5];
 const ADMIN_ACCESS_PASSWORD_KEY = 'worker-admin-access-password-v1';
-const ADMIN_ACCESS_SESSION_KEY = 'worker-admin-access-session-v1';
 const DEFAULT_ADMIN_ACCESS_PASSWORD = '1234';
 const RECENT_TAG_COLORS_KEY = 'worker-recent-tag-colors-v1';
 
@@ -74,7 +73,7 @@ let profilesCache = [];
 let ratingRules = [];
 let adminSettings = { statusWeights: {}, jobTypes: [], checklistMathRules: [], customTags: [] };
 let ratingCriteria = [];
-let adminAccessUnlocked = localStorage.getItem(ADMIN_ACCESS_SESSION_KEY) === 'unlocked';
+let adminAccessUnlocked = false;
 let editingProfileId = null;
 let editingJobTypeName = null;
 let editingCriterionId = null;
@@ -864,12 +863,17 @@ const renderExactRatings = (profileId, ratings) => {
     return '<p class="hint">No ratings saved yet.</p>';
   }
 
+  const showRemoveActions = adminAccessUnlocked;
+
   const rows = [...ratings]
     .sort((a, b) => new Date(b.ratedAt).getTime() - new Date(a.ratedAt).getTime())
     .map((entry) => {
       const date = formatTimestamp(entry.ratedAt);
       const note = entry.note ? `<p class="hint">${entry.note}</p>` : '';
-      return `<li class="entry-row"><div><strong>${date}</strong> — ${entry.category}: ${entry.score}${note}</div><button type="button" class="secondary" data-delete-rating-id="${entry.id}" data-profile-id="${profileId}">Remove</button></li>`;
+      const removeButton = showRemoveActions
+        ? `<button type="button" class="secondary" data-delete-rating-id="${entry.id}" data-profile-id="${profileId}">Remove</button>`
+        : '';
+      return `<li class="entry-row"><div><strong>${date}</strong> — ${entry.category}: ${entry.score}${note}</div>${removeButton}</li>`;
     })
     .join('');
 
@@ -1681,11 +1685,6 @@ const getAdminPassword = () => localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY) |
 
 const setAdminUnlocked = (unlocked) => {
   adminAccessUnlocked = unlocked;
-  if (unlocked) {
-    localStorage.setItem(ADMIN_ACCESS_SESSION_KEY, 'unlocked');
-  } else {
-    localStorage.removeItem(ADMIN_ACCESS_SESSION_KEY);
-  }
 };
 
 const canAccessAdmin = () => {
@@ -1739,6 +1738,10 @@ const showProfilePage = (show, options = {}) => {
 const showAdminPage = (show) => {
   if (show && !canAccessAdmin()) {
     return;
+  }
+
+  if (!show) {
+    setAdminUnlocked(false);
   }
 
   mainPage.classList.toggle('hidden', show);
@@ -2336,6 +2339,7 @@ if (workerProfileDetail) {
 
     const ratingId = target.getAttribute('data-delete-rating-id');
     if (ratingId) {
+      if (!canAccessAdmin()) return;
       if (!confirmAction('Do you really want to remove this rating?')) return;
       try {
         await deleteProfileRating(profileId, ratingId);
