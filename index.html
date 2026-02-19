@@ -94,6 +94,17 @@
         </section>
 
         <section class="card">
+          <h2>Retrieve Worker Profile</h2>
+          <label>
+            <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
+            <select id="worker-selector" aria-label="Select worker profile"></select>
+          </label>
+          <div id="worker-profile-detail" class="profile-detail">
+            <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
+          </div>
+        </section>
+
+        <section class="card">
           <div class="section-header">
             <h2>Worker Profiles</h2>
             <div class="section-actions">
@@ -104,17 +115,6 @@
           <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
           <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
           <ul id="profiles" class="profiles"></ul>
-        </section>
-
-        <section class="card">
-          <h2>Retrieve Worker Profile</h2>
-          <label>
-            <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
-            <select id="worker-selector" aria-label="Select worker profile"></select>
-          </label>
-          <div id="worker-profile-detail" class="profile-detail">
-            <p class="hint">Choose a worker to inspect category-level rating history and trends.</p>
-          </div>
         </section>
       </section>
 
