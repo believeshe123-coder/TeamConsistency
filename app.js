@@ -91,7 +91,7 @@ const canonicalWorkerKey = (name, employeeId = '') => {
   return eid ? `${n}::${eid}` : n;
 };
 const confirmAction = (message = 'Do you really want to clear?') => window.confirm(message);
-const AUTO_SYNC_INTERVAL_MS = 15000;
+const AUTO_SYNC_INTERVAL_MS = 60000;
 const ADMIN_SYNC_KEY = 'settings_bundle_v1';
 
 const DEFAULT_STEADY_TAG = { id: 'steady-default', label: 'Steady', color: '#5f8df5', locked: true };
@@ -1709,6 +1709,68 @@ const refreshFromBackend = async ({ silent = false } = {}) => {
   }
 };
 
+
+let eventsConnection = null;
+let eventsConnected = false;
+let lastEventsErrorAt = 0;
+
+const startRealtimeSync = () => {
+  if (!window.EventSource) {
+    setDataSyncStatus('Live sync unavailable in this browser. Using periodic refresh.');
+    return;
+  }
+
+  if (eventsConnection) {
+    eventsConnection.close();
+  }
+
+  eventsConnection = new EventSource(`${API_BASE}/events`);
+
+  eventsConnection.addEventListener('open', () => {
+    eventsConnected = true;
+    setDataSyncStatus(`Live sync connected as of ${new Date().toLocaleTimeString()}.`);
+  });
+
+  eventsConnection.addEventListener('profiles_updated', () => {
+    refreshFromBackend({ silent: true }).catch(() => {
+      // keep UI stable while background refresh retries
+    });
+  });
+
+  eventsConnection.addEventListener('admin_settings_updated', () => {
+    pullAdminBundleFromBackend().then((didSync) => {
+      if (didSync) {
+        renderAdminSettings();
+        renderRules();
+        renderCriterionRatings();
+      }
+    }).catch(() => {
+      // fallback to local state if bundle cannot be fetched
+    });
+  });
+
+  eventsConnection.addEventListener('admin_catalog_updated', () => {
+    pullAdminBundleFromBackend().then((didSync) => {
+      if (didSync) {
+        renderAdminSettings();
+        renderRules();
+        renderCriterionRatings();
+      }
+    }).catch(() => {
+      // fallback to local state if bundle cannot be fetched
+    });
+  });
+
+  eventsConnection.onerror = () => {
+    eventsConnected = false;
+    const now = Date.now();
+    if (now - lastEventsErrorAt > 10000) {
+      setDataSyncStatus('Live sync disconnected. Falling back to periodic refresh...', true);
+      lastEventsErrorAt = now;
+    }
+  };
+};
+
 const setQuickWorkerFeedback = (message, isError = false) => {
   if (!quickWorkerFeedback) return;
   quickWorkerFeedback.textContent = message;
@@ -2722,7 +2784,9 @@ refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });
 
+startRealtimeSync();
 window.setInterval(() => {
+  if (eventsConnected) return;
   refreshFromBackend({ silent: true }).catch(() => {
     // background sync should never interrupt users
   });

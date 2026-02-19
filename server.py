@@ -1,8 +1,10 @@
 import json
 import os
+import queue
 import sqlite3
 import math
 import re
+import threading
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -11,6 +13,9 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(ROOT_DIR, 'data.sqlite')
 HOST = '0.0.0.0'
 PORT = int(os.environ.get('PORT', '3000'))
+
+EVENT_SUBSCRIBERS: set[queue.Queue] = set()
+EVENT_SUBSCRIBERS_LOCK = threading.Lock()
 
 
 def now_iso() -> str:
@@ -577,6 +582,18 @@ def delete_profile_note(connection: sqlite3.Connection, worker_id: int, note_id:
     return cursor.rowcount > 0
 
 
+def publish_change_event(event_type: str, payload: dict | None = None) -> None:
+    message = {
+        'type': event_type,
+        'timestamp': now_iso(),
+        'payload': payload or {},
+    }
+    with EVENT_SUBSCRIBERS_LOCK:
+        subscribers = list(EVENT_SUBSCRIBERS)
+    for subscriber in subscribers:
+        subscriber.put(message)
+
+
 class WorkerAPIHandler(SimpleHTTPRequestHandler):
     def _send_json(self, status_code: int, payload: dict | list) -> None:
         body = json.dumps(payload).encode('utf-8')
@@ -598,6 +615,37 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        if path == '/api/events':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.end_headers()
+
+            event_queue: queue.Queue = queue.Queue()
+            with EVENT_SUBSCRIBERS_LOCK:
+                EVENT_SUBSCRIBERS.add(event_queue)
+
+            try:
+                self.wfile.write(b': connected\n\n')
+                self.wfile.flush()
+                while True:
+                    try:
+                        message = event_queue.get(timeout=20)
+                        event_type = str(message.get('type', 'change'))
+                        body = json.dumps(message)
+                        self.wfile.write(f'event: {event_type}\n'.encode('utf-8'))
+                        self.wfile.write(f'data: {body}\n\n'.encode('utf-8'))
+                    except queue.Empty:
+                        self.wfile.write(b': keepalive\n\n')
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                with EVENT_SUBSCRIBERS_LOCK:
+                    EVENT_SUBSCRIBERS.discard(event_queue)
+            return
 
         if path == '/api/health':
             self._send_json(200, {'ok': True})
@@ -756,6 +804,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 self._send_json(409, {'message': 'Duplicate worker key or employee ID detected. Merge duplicates or change employee ID.'})
                 return
 
+            publish_change_event('profiles_updated', {'profileId': int(profile['id']), 'action': 'create_profile'})
+
             self._send_json(status, profile)
             return
 
@@ -831,6 +881,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 self._send_json(409, {'message': 'Duplicate worker key or employee ID detected. Merge duplicates or change employee ID.'})
                 return
 
+            publish_change_event('profiles_updated', {'profileId': int(profile['id']), 'action': 'submit_rating'})
+
             self._send_json(status, profile)
             return
 
@@ -851,6 +903,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 save_admin_list(connection, 'job_types', normalized_job_types)
                 save_admin_list(connection, 'criteria_names', normalized_criteria)
 
+            publish_change_event('admin_catalog_updated')
+
             self._send_json(200, {'jobTypes': normalized_job_types, 'criteriaNames': normalized_criteria})
             return
 
@@ -864,6 +918,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             value = payload.get('value')
             with db_connection() as connection:
                 save_admin_value(connection, key, value)
+
+            publish_change_event('admin_settings_updated', {'key': key})
 
             self._send_json(200, {'key': key, 'value': value})
             return
@@ -892,6 +948,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
 
                 row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (target_id,)).fetchone()
                 profile = build_profile(connection, row)
+
+            publish_change_event('profiles_updated', {'profileId': target_id, 'action': 'merge'})
 
             self._send_json(200, profile)
             return
@@ -952,6 +1010,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
 
                 row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
                 profile = build_profile(connection, row)
+
+            publish_change_event('profiles_updated', {'profileId': worker_id, 'action': 'add_rating'})
 
             self._send_json(201, profile)
             return
@@ -1055,6 +1115,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (int(profile_id),)).fetchone()
             profile = build_profile(connection, row)
 
+        publish_change_event('profiles_updated', {'profileId': int(profile_id), 'action': 'update_profile'})
+
         self._send_json(200, profile)
 
     def do_DELETE(self):
@@ -1068,6 +1130,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 connection.execute('DELETE FROM worker_ratings')
                 connection.execute('DELETE FROM worker_profiles')
 
+            publish_change_event('profiles_updated', {'action': 'clear_all'})
+
             self._send_no_content()
             return
 
@@ -1080,6 +1144,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 if cursor.rowcount == 0:
                     self._send_json(404, {'message': 'Profile not found'})
                     return
+
+            publish_change_event('profiles_updated', {'profileId': worker_id, 'action': 'delete_profile'})
 
             self._send_no_content()
             return
@@ -1105,6 +1171,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
 
                 row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
                 profile = build_profile(connection, row)
+
+            publish_change_event('profiles_updated', {'profileId': worker_id, 'action': f"delete_{segments[3][:-1]}"})
 
             self._send_json(200, profile)
             return
