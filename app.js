@@ -262,6 +262,16 @@ const saveRating = async (rating) => {
       profile = {
         ...profiles[profileIndex],
         ratings: [...(profiles[profileIndex].ratings || []), ratingEntry],
+        historyEntries: [
+          ...(profiles[profileIndex].historyEntries || []),
+          {
+            id: `local-history-${Date.now()}`,
+            category: rating.category,
+            score: Number(rating.score),
+            note: `Rating logged by ${rating.reviewer}${rating.note ? `: ${rating.note}` : ''}`,
+            createdAt: now,
+          },
+        ],
         updatedAt: now,
       };
       profiles[profileIndex] = recalculateProfileFields(profile);
@@ -273,7 +283,13 @@ const saveRating = async (rating) => {
         profileStatus: '',
         backgroundInfo: '',
         ratings: [ratingEntry],
-        historyEntries: [],
+        historyEntries: [{
+          id: `local-history-${Date.now()}`,
+          category: rating.category,
+          score: Number(rating.score),
+          note: `Rating logged by ${rating.reviewer}${rating.note ? `: ${rating.note}` : ''}`,
+          createdAt: now,
+        }],
         profileNotes: [],
         createdAt: now,
         updatedAt: now,
@@ -890,6 +906,10 @@ const renderProfiles = (profiles) => {
         <h4>Profile history summary</h4>
         ${renderHistorySummary(profile.historyEntries)}
       </div>
+      <details class="category-history">
+        <summary><strong>Full job rating details</strong></summary>
+        ${renderExactRatings(profile.id, profile.ratings)}
+      </details>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button><button type="button" class="secondary" data-delete-profile-id="${profile.id}">Delete</button></div>
     `;
     profilesList.appendChild(item);
