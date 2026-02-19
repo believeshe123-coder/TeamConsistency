@@ -32,19 +32,9 @@
               </label>
 
               <label>
-                <span class="label-text">Category <span class="required-indicator" aria-hidden="true">*</span></span>
-                <select id="category" name="category" required aria-describedby="category-error"></select>
-                <span id="category-error" class="field-error">Select a category before saving.</span>
-              </label>
-
-              <label>
-                <span class="label-text">Predefined category rules</span>
-                <select id="rating-rule-select" aria-label="Select predefined rating rule"></select>
-              </label>
-
-              <label>
-                <span class="label-text">Common problems quick pick</span>
-                <select id="common-problem-select" aria-label="Select common problem"></select>
+                <span class="label-text">Job type <span class="required-indicator" aria-hidden="true">*</span></span>
+                <select id="job-type" name="jobType" required aria-describedby="job-type-error"></select>
+                <span id="job-type-error" class="field-error">Select a job type before saving.</span>
               </label>
 
             </div>
@@ -61,23 +51,12 @@
             </fieldset>
 
             <label>
-              <span class="label-text">Good notes</span>
-              <textarea id="good-notes" name="goodNotes" rows="2" placeholder="What went well?"></textarea>
-            </label>
-
-            <label>
-              <span class="label-text">Needs improvement notes</span>
-              <textarea id="bad-notes" name="badNotes" rows="2" placeholder="What should improve next time?"></textarea>
-            </label>
-
-            <label>
               <span class="label-text">Notes (strengths / weaknesses)</span>
               <textarea id="note" name="note" rows="4" placeholder="Great pace on loading dock, needs help with labeling accuracy."></textarea>
             </label>
 
             <div class="form-actions">
               <button type="submit">Save Rating</button>
-              <button type="button" id="apply-rating-rule" class="secondary">Add Selected Category Rating</button>
             </div>
           </form>
         </section>
@@ -171,6 +150,18 @@
             <fieldset class="history-fieldset">
               <legend>Status weights</legend>
               <div id="status-weights" class="field-grid"></div>
+            </fieldset>
+
+            <fieldset class="history-fieldset">
+              <legend>Job types</legend>
+              <div id="job-types-list" class="history-list"></div>
+              <div class="field-grid">
+                <label>
+                  <span class="label-text">Job type</span>
+                  <input id="job-type-name" type="text" placeholder="Loading dock" />
+                </label>
+              </div>
+              <button type="button" id="add-job-type" class="secondary">Add job type</button>
             </fieldset>
 
             <fieldset class="history-fieldset">
