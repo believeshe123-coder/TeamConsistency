@@ -112,7 +112,6 @@ h2 {
 
 #main-page > .card {
   border-right: 1px solid #98a0b8;
-  min-height: calc(100vh - 130px);
 }
 
 #main-page .right-column-stack .card {
