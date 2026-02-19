@@ -5,6 +5,10 @@ const RATING_RULES_KEY = 'worker-rating-rules-v1';
 const ADMIN_SETTINGS_KEY = 'worker-admin-settings-v1';
 const RATING_CRITERIA_KEY = 'worker-rating-criteria-v1';
 const SCORE_CHOICES = [-5, -2.5, 0, 2.5, 5];
+const ADMIN_ACCESS_PASSWORD_KEY = 'worker-admin-access-password-v1';
+const ADMIN_ACCESS_SESSION_KEY = 'worker-admin-access-session-v1';
+const DEFAULT_ADMIN_ACCESS_PASSWORD = '1234';
+const INSIGHT_TABS_RESET_KEY = 'worker-insight-tabs-reset-v1';
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -28,12 +32,22 @@ const adminPage = document.getElementById('admin-page');
 const tabRatings = document.getElementById('tab-ratings');
 const tabAdmin = document.getElementById('tab-admin');
 const adminSettingsForm = document.getElementById('admin-settings-form');
+const lockAdminButton = document.getElementById('lock-admin');
+const saveAdminPasswordButton = document.getElementById('save-admin-password');
+const adminPasswordInput = document.getElementById('admin-password');
+const adminAccessFeedback = document.getElementById('admin-access-feedback');
 const statusWeightsContainer = document.getElementById('status-weights');
 const jobTypesList = document.getElementById('job-types-list');
 const addJobTypeButton = document.getElementById('add-job-type');
 const criteriaRatingsContainer = document.getElementById('criterion-ratings');
 const ratingCriteriaList = document.getElementById('rating-criteria-list');
 const addRatingCriterionButton = document.getElementById('add-rating-criterion');
+const insightTabsList = document.getElementById('insight-tabs-list');
+const addInsightTabButton = document.getElementById('add-insight-tab');
+const insightTabLabelInput = document.getElementById('insight-tab-label');
+const insightTabTypeSelect = document.getElementById('insight-tab-type');
+const insightTabTriggerSelect = document.getElementById('insight-tab-trigger');
+const insightTabCustomInput = document.getElementById('insight-tab-custom');
 const workerNameSelect = document.getElementById('workerName');
 const quickAddWorkerButton = document.getElementById('quick-add-worker');
 const quickWorkerNameInput = document.getElementById('quick-worker-name');
@@ -41,8 +55,9 @@ const quickWorkerFeedback = document.getElementById('quick-worker-feedback');
 
 let profilesCache = [];
 let ratingRules = [];
-let adminSettings = { statusWeights: {}, jobTypes: [] };
+let adminSettings = { statusWeights: {}, jobTypes: [], insightTabs: [] };
 let ratingCriteria = [];
+let adminAccessUnlocked = localStorage.getItem(ADMIN_ACCESS_SESSION_KEY) === 'unlocked';
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
@@ -315,6 +330,24 @@ const deleteProfileNote = async (profileId, noteId) => {
 
 const DEFAULT_JOB_TYPES = ['Loading dock', 'Warehouse', 'Picker'];
 
+const defaultInsightTabs = () => ([]);
+
+const normalizeInsightTabs = (tabs) => {
+  const source = Array.isArray(tabs) ? tabs : defaultInsightTabs();
+  const normalized = source
+    .filter((tab) => tab && String(tab.label || '').trim())
+    .map((tab) => ({
+      id: String(tab.id || crypto.randomUUID()),
+      label: String(tab.label || '').trim(),
+      type: ['strength', 'trend', 'custom'].includes(String(tab.type || '').toLowerCase()) ? String(tab.type || '').toLowerCase() : 'custom',
+      trigger: String(tab.trigger || '') === 'auto-if-flagged' ? 'auto-if-flagged' : 'manual',
+      customText: String(tab.customText || '').trim(),
+    }));
+
+  return normalized;
+};
+
+
 const loadAdminSettings = () => {
   try {
     const parsed = JSON.parse(localStorage.getItem(ADMIN_SETTINGS_KEY) || '{}');
@@ -327,11 +360,22 @@ const loadAdminSettings = () => {
       ? [...new Set(parsed.jobTypes.map((item) => String(item || '').trim()).filter(Boolean))]
       : [...DEFAULT_JOB_TYPES];
 
-    return { statusWeights, jobTypes: jobTypes.length ? jobTypes : [...DEFAULT_JOB_TYPES] };
+    const shouldResetInsightTabs = localStorage.getItem(INSIGHT_TABS_RESET_KEY) !== 'done';
+    const insightTabs = shouldResetInsightTabs ? [] : normalizeInsightTabs(parsed?.insightTabs);
+    if (shouldResetInsightTabs) {
+      localStorage.setItem(INSIGHT_TABS_RESET_KEY, 'done');
+    }
+
+    return {
+      statusWeights,
+      jobTypes: jobTypes.length ? jobTypes : [...DEFAULT_JOB_TYPES],
+      insightTabs,
+    };
   } catch {
     return {
       statusWeights: PROFILE_STATUSES.reduce((acc, status) => ({ ...acc, [status]: 0 }), {}),
       jobTypes: [...DEFAULT_JOB_TYPES],
+      insightTabs: [],
     };
   }
 };
@@ -495,6 +539,51 @@ const summarizeJobTypeScores = (ratings) => {
     }))
     .sort((a, b) => b.average - a.average || b.reviews - a.reviews || a.jobType.localeCompare(b.jobType));
 };
+const deriveStrengthTags = (ratings) => {
+  const ranked = summarizeJobTypeScores(ratings).slice(0, 3);
+  if (ratings.length < 2 || !ranked.length) return ['Not enough history yet.'];
+  return ranked.map((entry) => `${entry.jobType} (${entry.average})`);
+};
+
+const deriveTrendFlags = (ratings) => {
+  const flags = [];
+
+  const checklistEntries = ratings.flatMap((entry) => {
+    const note = String(entry.note || '');
+    const matches = note.match(/([^;|]+)=([^;|]+)\(base:([-\d.]+),\s*weight:([-\d.]+)\)/gi) || [];
+    return matches.map((segment) => {
+      const parsed = segment.match(/([^=]+)=([^\(]+)\(base:([-\d.]+),\s*weight:([-\d.]+)\)/i);
+      return {
+        criterion: String(parsed?.[1] || '').trim().toLowerCase(),
+        baseScore: Number(parsed?.[3] || Number.NaN),
+      };
+    });
+  });
+
+  const punctualityLowCount = ratings.filter((entry) => isPunctualityCategory(entry.category) && Number(entry.score) <= 0).length
+    + checklistEntries.filter((entry) => isPunctualityCategory(entry.criterion) && Number(entry.baseScore) <= 0).length;
+  if (punctualityLowCount >= 3) {
+    flags.push('Late Trend');
+  }
+
+  const professionalismIssueCount = checklistEntries
+    .filter((entry) => entry.criterion.includes('professional') && Number(entry.baseScore) <= -2.5).length;
+  if (professionalismIssueCount >= 2) {
+    flags.push('Professionalism Issue');
+  }
+
+  const hasNcnsRisk = ratings.some((entry) => {
+    const note = String(entry.note || '').toLowerCase();
+    return note.includes('ncns') || note.includes('no call');
+  });
+  if (hasNcnsRisk) {
+    flags.push('NCNS Risk');
+  }
+
+  return flags.length ? flags : ['No active trend flags.'];
+};
+
+
 
 const renderProfileNotesTimeline = (profileId, profileNotes) => {
   if (!profileNotes?.length) {
@@ -662,6 +751,26 @@ const renderWorkerProfile = (profiles, workerId) => {
 
   const badgeClass = ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+  const insightTabs = normalizeInsightTabs(adminSettings.insightTabs);
+  const insightTabData = insightTabs.map((tab) => {
+    if (tab.type === 'strength') {
+      const items = deriveStrengthTags(ratings);
+      const hasSignal = items.length > 0 && items[0] !== 'Not enough history yet.';
+      return { ...tab, items, hasSignal };
+    }
+
+    if (tab.type === 'trend') {
+      const items = deriveTrendFlags(ratings);
+      const hasSignal = items.some((item) => item !== 'No active trend flags.');
+      return { ...tab, items, hasSignal };
+    }
+
+    const customItems = String(tab.customText || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    const items = customItems.length ? customItems : ['No details configured yet.'];
+    return { ...tab, items, hasSignal: customItems.length > 0 };
+  });
+
+  const autoOpenTab = insightTabData.find((tab) => tab.trigger === 'auto-if-flagged' && tab.hasSignal);
 
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
@@ -686,7 +795,16 @@ const renderWorkerProfile = (profiles, workerId) => {
         <span>Positive streak: ${analytics.currentPositiveStreak || 0}</span>
         <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
+        ${insightTabData.map((tab) => `<button type="button" class="badge badge-button steady" data-pill-trigger="${tab.id}">${tab.label}</button>`).join('')}
       </div>
+      ${insightTabData.map((tab) => `
+        <div class="pill-popup ${autoOpenTab?.id === tab.id ? '' : 'hidden'}" data-pill-panel="${tab.id}">
+          <p class="hint"><strong>${tab.label}</strong></p>
+          <ul>
+            ${tab.items.map((item) => `<li>${item}</li>`).join('')}
+          </ul>
+        </div>
+      `).join('')}
     </div>
 
     <article class="category-history">
@@ -730,7 +848,7 @@ const renderJobTypeOptions = () => {
 };
 
 const renderAdminSettings = () => {
-  if (!statusWeightsContainer || !jobTypesList) return;
+  if (!statusWeightsContainer || !jobTypesList || !insightTabsList) return;
 
   statusWeightsContainer.innerHTML = PROFILE_STATUSES.map((status) => `
     <label>
@@ -755,7 +873,46 @@ const renderAdminSettings = () => {
     jobTypesList.appendChild(row);
   });
 
+  insightTabsList.innerHTML = '';
+  normalizeInsightTabs(adminSettings.insightTabs).forEach((tab) => {
+    const row = document.createElement('div');
+    row.className = 'insight-tab-row';
+    row.innerHTML = `
+      <input type="text" value="${tab.label}" data-insight-field="label" data-insight-id="${tab.id}" aria-label="Insight tab label" />
+      <select data-insight-field="type" data-insight-id="${tab.id}" aria-label="Insight tab type">
+        <option value="strength" ${tab.type === 'strength' ? 'selected' : ''}>Strength Tags</option>
+        <option value="trend" ${tab.type === 'trend' ? 'selected' : ''}>Trend Flags</option>
+        <option value="custom" ${tab.type === 'custom' ? 'selected' : ''}>Custom text</option>
+      </select>
+      <select data-insight-field="trigger" data-insight-id="${tab.id}" aria-label="Insight tab trigger">
+        <option value="manual" ${tab.trigger === 'manual' ? 'selected' : ''}>Manual</option>
+        <option value="auto-if-flagged" ${tab.trigger === 'auto-if-flagged' ? 'selected' : ''}>Auto on issue</option>
+      </select>
+      <textarea rows="2" data-insight-field="customText" data-insight-id="${tab.id}" aria-label="Insight tab custom content" placeholder="One line per item">${tab.customText || ''}</textarea>
+      <div class="insight-tab-actions">
+        <button type="button" class="secondary" data-save-insight-id="${tab.id}">Save</button>
+        <button type="button" class="secondary" data-delete-insight-id="${tab.id}">Delete</button>
+      </div>
+    `;
+    insightTabsList.appendChild(row);
+  });
+
   renderJobTypeOptions();
+};
+
+const syncStatusWeightsFromInputs = () => {
+  PROFILE_STATUSES.forEach((status) => {
+    const field = statusWeightsContainer?.querySelector(`[data-status-weight="${status}"]`);
+    adminSettings.statusWeights[status] = Number(field?.value || 0);
+  });
+};
+
+const persistAdminSettings = ({ rerenderAdmin = false } = {}) => {
+  saveAdminSettings();
+  if (rerenderAdmin) {
+    renderAdminSettings();
+  }
+  renderAll(profilesCache);
 };
 
 const renderRatingCriteriaRows = () => {
@@ -1022,6 +1179,50 @@ const quickAddWorkerByName = async () => {
   }
 };
 
+
+const setAdminFeedback = (message, isError = false) => {
+  if (!adminAccessFeedback) return;
+  adminAccessFeedback.textContent = message;
+  adminAccessFeedback.classList.toggle('field-error', isError);
+};
+
+const getAdminPassword = () => localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY) || DEFAULT_ADMIN_ACCESS_PASSWORD;
+
+const setAdminUnlocked = (unlocked) => {
+  adminAccessUnlocked = unlocked;
+  if (unlocked) {
+    localStorage.setItem(ADMIN_ACCESS_SESSION_KEY, 'unlocked');
+  } else {
+    localStorage.removeItem(ADMIN_ACCESS_SESSION_KEY);
+  }
+};
+
+const canAccessAdmin = () => {
+  const configuredPassword = getAdminPassword();
+  if (!configuredPassword) {
+    setAdminUnlocked(true);
+    return true;
+  }
+
+  if (adminAccessUnlocked) return true;
+
+  const attempt = window.prompt('Enter admin password to access settings:', '');
+  if (attempt === null) return false;
+  if (attempt === configuredPassword) {
+    setAdminUnlocked(true);
+    return true;
+  }
+
+  // eslint-disable-next-line no-alert
+  alert('Incorrect admin password.');
+  return false;
+};
+
+const lockAdminAccess = () => {
+  setAdminUnlocked(false);
+  setAdminFeedback('Admin area locked.');
+};
+
 const showProfilePage = (show) => {
   mainPage.classList.toggle('hidden', show);
   profilePage.classList.toggle('hidden', !show);
@@ -1041,6 +1242,10 @@ const showProfilePage = (show) => {
 };
 
 const showAdminPage = (show) => {
+  if (show && !canAccessAdmin()) {
+    return;
+  }
+
   mainPage.classList.toggle('hidden', show);
   profilePage.classList.add('hidden');
   adminPage.classList.toggle('hidden', !show);
@@ -1147,8 +1352,7 @@ if (addJobTypeButton) {
 
     adminSettings.jobTypes.push(name);
     nameField.value = '';
-    renderAdminSettings();
-    renderJobTypeOptions();
+    persistAdminSettings({ rerenderAdmin: true });
   });
 }
 
@@ -1161,8 +1365,95 @@ if (jobTypesList) {
     if (!jobType) return;
 
     adminSettings.jobTypes = (adminSettings.jobTypes || []).filter((entry) => entry !== jobType);
-    renderAdminSettings();
-    renderJobTypeOptions();
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+if (addInsightTabButton) {
+  addInsightTabButton.addEventListener('click', () => {
+    const label = insightTabLabelInput?.value.trim() || '';
+    if (!label) return;
+
+    const nextTab = {
+      id: crypto.randomUUID(),
+      label,
+      type: String(insightTabTypeSelect?.value || 'custom'),
+      trigger: String(insightTabTriggerSelect?.value || 'manual'),
+      customText: String(insightTabCustomInput?.value || '').trim(),
+    };
+
+    adminSettings.insightTabs = [...(adminSettings.insightTabs || []), nextTab];
+
+    insightTabLabelInput.value = '';
+    if (insightTabCustomInput) insightTabCustomInput.value = '';
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+if (insightTabsList) {
+  insightTabsList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const deleteId = target.getAttribute('data-delete-insight-id');
+    if (deleteId) {
+      adminSettings.insightTabs = normalizeInsightTabs(adminSettings.insightTabs).filter((tab) => tab.id !== deleteId);
+      persistAdminSettings({ rerenderAdmin: true });
+      return;
+    }
+
+    const saveId = target.getAttribute('data-save-insight-id');
+    if (!saveId) return;
+
+    const row = target.closest('.insight-tab-row');
+    if (!(row instanceof HTMLElement)) return;
+
+    const label = row.querySelector('[data-insight-field="label"]')?.value?.trim() || '';
+    const type = row.querySelector('[data-insight-field="type"]')?.value || 'custom';
+    const trigger = row.querySelector('[data-insight-field="trigger"]')?.value || 'manual';
+    const customText = row.querySelector('[data-insight-field="customText"]')?.value?.trim() || '';
+
+    if (!label) return;
+
+    adminSettings.insightTabs = normalizeInsightTabs(adminSettings.insightTabs).map((tab) => (
+      tab.id === saveId ? { ...tab, label, type, trigger, customText } : tab
+    ));
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+
+
+if (saveAdminPasswordButton) {
+  saveAdminPasswordButton.addEventListener('click', () => {
+    const password = String(adminPasswordInput?.value || '').trim();
+    if (!password) {
+      setAdminFeedback('Enter a password before saving.', true);
+      return;
+    }
+
+    localStorage.setItem(ADMIN_ACCESS_PASSWORD_KEY, password);
+    if (adminPasswordInput) adminPasswordInput.value = '';
+    setAdminUnlocked(true);
+    setAdminFeedback('Admin password saved. Access is now protected.');
+  });
+}
+
+if (lockAdminButton) {
+  lockAdminButton.addEventListener('click', () => {
+    lockAdminAccess();
+    showAdminPage(false);
+  });
+}
+
+if (statusWeightsContainer) {
+  statusWeightsContainer.addEventListener('input', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.hasAttribute('data-status-weight')) return;
+
+    syncStatusWeightsFromInputs();
+    persistAdminSettings();
   });
 }
 
@@ -1171,14 +1462,8 @@ if (adminSettingsForm) {
   adminSettingsForm.addEventListener('submit', (event) => {
     event.preventDefault();
 
-    PROFILE_STATUSES.forEach((status) => {
-      const field = statusWeightsContainer.querySelector(`[data-status-weight="${status}"]`);
-      adminSettings.statusWeights[status] = Number(field?.value || 0);
-    });
-
-    saveAdminSettings();
-    renderAdminSettings();
-    renderAll(profilesCache);
+    syncStatusWeightsFromInputs();
+    persistAdminSettings({ rerenderAdmin: true });
   });
 }
 
@@ -1266,6 +1551,20 @@ if (workerProfileDetail) {
   workerProfileDetail.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    const pillTrigger = target.closest('[data-pill-trigger]');
+    if (pillTrigger instanceof HTMLElement) {
+      const panelName = pillTrigger.getAttribute('data-pill-trigger');
+      if (!panelName) return;
+
+      const panel = workerProfileDetail.querySelector(`[data-pill-panel="${panelName}"]`);
+      const isOpening = panel?.classList.contains('hidden');
+      workerProfileDetail.querySelectorAll('[data-pill-panel]').forEach((item) => item.classList.add('hidden'));
+      if (isOpening) {
+        panel?.classList.remove('hidden');
+      }
+      return;
+    }
 
     const profileId = target.getAttribute('data-profile-id');
     if (!profileId) return;
@@ -1385,6 +1684,10 @@ window.addEventListener('popstate', () => {
   showAdminPage(false);
   showProfilePage(hash === '#add-profile');
 });
+
+if (!localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY)) {
+  localStorage.setItem(ADMIN_ACCESS_PASSWORD_KEY, DEFAULT_ADMIN_ACCESS_PASSWORD);
+}
 
 adminSettings = loadAdminSettings();
 ratingRules = loadRatingRules();
