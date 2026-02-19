@@ -240,6 +240,23 @@ def replace_profile_history(connection: sqlite3.Connection, worker_id: int, entr
         )
 
 
+def append_profile_history_entry(
+    connection: sqlite3.Connection,
+    worker_id: int,
+    category: str,
+    score: float,
+    note: str,
+    created_at: str,
+) -> None:
+    connection.execute(
+        '''
+        INSERT INTO worker_profile_history (worker_id, category, score, note, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ''',
+        (worker_id, category, score, note or None, created_at),
+    )
+
+
 def fetch_profile_notes(connection: sqlite3.Connection, worker_id: int) -> list[dict]:
     rows = connection.execute(
         '''
@@ -528,6 +545,14 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                     ''',
                     (worker_id, category, score, reviewer, note, rated_at),
                 )
+                append_profile_history_entry(
+                    connection,
+                    worker_id,
+                    category,
+                    score,
+                    f'Rating logged by {reviewer}' + (f': {note}' if note else ''),
+                    rated_at,
+                )
 
                 row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
                 profile = build_profile(connection, row)
@@ -566,6 +591,14 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                     VALUES (?, ?, ?, ?, ?, ?)
                     ''',
                     (worker_id, category, score, reviewer, note, rated_at),
+                )
+                append_profile_history_entry(
+                    connection,
+                    worker_id,
+                    category,
+                    score,
+                    f'Rating logged by {reviewer}' + (f': {note}' if note else ''),
+                    rated_at,
                 )
                 connection.execute(
                     '''
@@ -658,6 +691,14 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                     VALUES (?, ?, ?, ?, ?, ?)
                     ''',
                     (int(profile_id), category, score, reviewer, note, rated_at),
+                )
+                append_profile_history_entry(
+                    connection,
+                    int(profile_id),
+                    category,
+                    score,
+                    f'Rating logged by {reviewer}' + (f': {note}' if note else ''),
+                    rated_at,
                 )
 
             replace_profile_history(connection, int(profile_id), history_entries)
