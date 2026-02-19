@@ -8,7 +8,6 @@ const SCORE_CHOICES = [-5, -2.5, 0, 2.5, 5];
 const ADMIN_ACCESS_PASSWORD_KEY = 'worker-admin-access-password-v1';
 const ADMIN_ACCESS_SESSION_KEY = 'worker-admin-access-session-v1';
 const DEFAULT_ADMIN_ACCESS_PASSWORD = '1234';
-const INSIGHT_TABS_RESET_KEY = 'worker-insight-tabs-reset-v1';
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -330,7 +329,22 @@ const deleteProfileNote = async (profileId, noteId) => {
 
 const DEFAULT_JOB_TYPES = ['Loading dock', 'Warehouse', 'Picker'];
 
-const defaultInsightTabs = () => ([]);
+const defaultInsightTabs = () => ([
+  {
+    id: 'strength-default',
+    label: 'Strength Tags',
+    type: 'strength',
+    trigger: 'manual',
+    customText: '',
+  },
+  {
+    id: 'trend-default',
+    label: 'Trend Flags',
+    type: 'trend',
+    trigger: 'auto-if-flagged',
+    customText: '',
+  },
+]);
 
 const normalizeInsightTabs = (tabs) => {
   const source = Array.isArray(tabs) ? tabs : defaultInsightTabs();
@@ -344,7 +358,7 @@ const normalizeInsightTabs = (tabs) => {
       customText: String(tab.customText || '').trim(),
     }));
 
-  return normalized;
+  return normalized.length ? normalized : defaultInsightTabs();
 };
 
 
@@ -360,11 +374,7 @@ const loadAdminSettings = () => {
       ? [...new Set(parsed.jobTypes.map((item) => String(item || '').trim()).filter(Boolean))]
       : [...DEFAULT_JOB_TYPES];
 
-    const shouldResetInsightTabs = localStorage.getItem(INSIGHT_TABS_RESET_KEY) !== 'done';
-    const insightTabs = shouldResetInsightTabs ? [] : normalizeInsightTabs(parsed?.insightTabs);
-    if (shouldResetInsightTabs) {
-      localStorage.setItem(INSIGHT_TABS_RESET_KEY, 'done');
-    }
+    const insightTabs = normalizeInsightTabs(parsed?.insightTabs);
 
     return {
       statusWeights,
@@ -375,7 +385,7 @@ const loadAdminSettings = () => {
     return {
       statusWeights: PROFILE_STATUSES.reduce((acc, status) => ({ ...acc, [status]: 0 }), {}),
       jobTypes: [...DEFAULT_JOB_TYPES],
-      insightTabs: [],
+      insightTabs: defaultInsightTabs(),
     };
   }
 };
@@ -1382,7 +1392,7 @@ if (addInsightTabButton) {
       customText: String(insightTabCustomInput?.value || '').trim(),
     };
 
-    adminSettings.insightTabs = [...(adminSettings.insightTabs || []), nextTab];
+    adminSettings.insightTabs = [...normalizeInsightTabs(adminSettings.insightTabs), nextTab];
 
     insightTabLabelInput.value = '';
     if (insightTabCustomInput) insightTabCustomInput.value = '';
