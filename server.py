@@ -120,8 +120,8 @@ def validate_rating_payload(payload: dict, require_worker_name: bool = False) ->
 
     if not category:
         return 'Missing required field: category'
-    if score is None or score < -10 or score > 10:
-        return 'score must be a number between -10 and 10'
+    if score is None or score < -5 or score > 5:
+        return 'score must be a number between -5 and 5'
     if not reviewer:
         return 'Missing required field: reviewer'
 
@@ -139,8 +139,8 @@ def validate_history_entries(entries: list[dict]) -> str | None:
         except (TypeError, ValueError):
             score = None
 
-        if score is None or score < 1 or score > 10:
-            return 'Each history entry score must be a number between 1 and 10'
+        if score is None or score < -5 or score > 5:
+            return 'Each history entry score must be a number between -5 and 5'
 
     return None
 
@@ -527,8 +527,8 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                 self._send_json(400, {'message': 'name must be at least 2 characters'})
                 return
 
-            if score is None or score < -10 or score > 10:
-                self._send_json(400, {'message': 'score must be a number between -10 and 10'})
+            if score is None or score < -5 or score > 5:
+                self._send_json(400, {'message': 'score must be a number between -5 and 5'})
                 return
 
             connection.execute(

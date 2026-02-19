@@ -3,6 +3,8 @@ const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
 const PROFILE_STATUSES = ['Full-time', 'Part-time', 'New'];
 const RATING_RULES_KEY = 'worker-rating-rules-v1';
 const ADMIN_SETTINGS_KEY = 'worker-admin-settings-v1';
+const RATING_CRITERIA_KEY = 'worker-rating-criteria-v1';
+const SCORE_CHOICES = [-5, -2.5, 0, 2.5, 5];
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -31,10 +33,15 @@ const adminSettingsForm = document.getElementById('admin-settings-form');
 const statusWeightsContainer = document.getElementById('status-weights');
 const commonProblemsList = document.getElementById('common-problems-list');
 const addCommonProblemButton = document.getElementById('add-common-problem');
+const criteriaRatingsContainer = document.getElementById('criterion-ratings');
+const ratingCriteriaList = document.getElementById('rating-criteria-list');
+const addRatingCriterionButton = document.getElementById('add-rating-criterion');
+const workerNameOptions = document.getElementById('worker-name-options');
 
 let profilesCache = [];
 let ratingRules = [];
 let adminSettings = { statusWeights: {}, commonProblems: [] };
+let ratingCriteria = [];
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
@@ -97,8 +104,8 @@ const upsertLocalProfile = (incomingProfile) => {
 };
 
 const statusFromScore = (score) => {
-  if (score >= 8.4) return 'top-performer';
-  if (score <= 5) return 'at-risk';
+  if (score >= 2.5) return 'top-performer';
+  if (score <= -2.5) return 'at-risk';
   return 'steady';
 };
 
@@ -252,6 +259,63 @@ const saveAdminSettings = () => {
   localStorage.setItem(ADMIN_SETTINGS_KEY, JSON.stringify(adminSettings));
 };
 
+const defaultRatingCriteria = () => ([
+  {
+    id: crypto.randomUUID(),
+    name: 'Late / on time',
+    labels: {
+      '-5': 'Extremely late',
+      '-2.5': 'A bit late',
+      '0': 'On time',
+      '2.5': 'Slightly early',
+      '5': 'Extremely early',
+    },
+  },
+  {
+    id: crypto.randomUUID(),
+    name: 'Work quality',
+    labels: {
+      '-5': 'Extremely bad',
+      '-2.5': 'A little bad',
+      '0': 'No / average',
+      '2.5': 'A little good',
+      '5': 'Extremely good',
+    },
+  },
+]);
+
+const loadRatingCriteria = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RATING_CRITERIA_KEY) || '[]');
+    if (!Array.isArray(parsed) || !parsed.length) return defaultRatingCriteria();
+
+    const normalized = parsed
+      .filter((item) => item && String(item.name || '').trim())
+      .map((item) => {
+        const labels = item.labels || {};
+        return {
+          id: String(item.id || crypto.randomUUID()),
+          name: String(item.name || '').trim(),
+          labels: {
+            '-5': String(labels['-5'] || 'Extremely bad').trim(),
+            '-2.5': String(labels['-2.5'] || 'A little bad').trim(),
+            '0': String(labels['0'] || 'No / average').trim(),
+            '2.5': String(labels['2.5'] || 'A little good').trim(),
+            '5': String(labels['5'] || 'Extremely good').trim(),
+          },
+        };
+      });
+
+    return normalized.length ? normalized : defaultRatingCriteria();
+  } catch {
+    return defaultRatingCriteria();
+  }
+};
+
+const saveRatingCriteria = () => {
+  localStorage.setItem(RATING_CRITERIA_KEY, JSON.stringify(ratingCriteria));
+};
+
 const loadRatingRules = () => {
 
   try {
@@ -380,6 +444,19 @@ const renderWorkerSelector = (profiles) => {
   });
 };
 
+const renderWorkerNameSuggestions = (profiles) => {
+  if (!workerNameOptions) return;
+  workerNameOptions.innerHTML = '';
+
+  [...profiles]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((profile) => {
+      const option = document.createElement('option');
+      option.value = profile.name;
+      workerNameOptions.appendChild(option);
+    });
+};
+
 const renderWorkerProfile = (profiles, workerId) => {
   if (!workerId) {
     workerProfileDetail.innerHTML = '<p class="hint">Choose a worker to inspect category-level rating history and trends.</p>';
@@ -403,7 +480,7 @@ const renderWorkerProfile = (profiles, workerId) => {
           .map((entry) => {
             const formattedDate = new Date(entry.ratedAt).toLocaleString();
             const note = entry.note ? ` — ${entry.note}` : '';
-            return `<li>${formattedDate}: ${entry.score} by ${entry.reviewer}${note}</li>`;
+            return `<li>${formattedDate}: ${entry.score}${note}</li>`;
           })
           .join('')
       : '<li>No ratings yet.</li>';
@@ -488,11 +565,56 @@ const renderAdminSettings = () => {
   renderCommonProblemSelect();
 };
 
+const renderRatingCriteriaRows = () => {
+  if (!ratingCriteriaList) return;
+
+  ratingCriteriaList.innerHTML = '';
+
+  if (!ratingCriteria.length) {
+    ratingCriteriaList.innerHTML = '<p class="hint">No checklist items yet.</p>';
+    return;
+  }
+
+  ratingCriteria.forEach((criterion) => {
+    const row = document.createElement('div');
+    row.className = 'problem-row';
+    row.innerHTML = `
+      <span><strong>${criterion.name}</strong> — ${criterion.labels['-5']} | ${criterion.labels['-2.5']} | ${criterion.labels['0']} | ${criterion.labels['2.5']} | ${criterion.labels['5']}</span>
+      <button type="button" class="secondary" data-delete-criterion="${criterion.id}">Delete</button>
+    `;
+    ratingCriteriaList.appendChild(row);
+  });
+};
+
+const renderCriterionRatings = () => {
+  if (!criteriaRatingsContainer) return;
+
+  criteriaRatingsContainer.innerHTML = '';
+
+  ratingCriteria.forEach((criterion) => {
+    const row = document.createElement('div');
+    row.className = 'criterion-rating-row';
+    row.innerHTML = `
+      <label class="criterion-toggle">
+        <input type="checkbox" data-criterion-toggle="${criterion.id}" />
+        <span>${criterion.name}</span>
+      </label>
+      <div class="criterion-scale hidden" data-criterion-scale="${criterion.id}">
+        ${SCORE_CHOICES.map((value) => `<label><input type="radio" name="criterion-${criterion.id}" value="${value}" ${value === 0 ? 'checked' : ''} /> <span>${criterion.labels[String(value)]}</span></label>`).join('')}
+      </div>
+    `;
+    criteriaRatingsContainer.appendChild(row);
+  });
+};
+
 const renderAll = (profiles) => {
   renderProfiles(profiles);
   renderWorkerSelector(profiles);
+  renderWorkerNameSuggestions(profiles);
   renderWorkerProfile(profiles, workerSelector.value);
   renderCommonProblemSelect();
+  renderCriterionRatings();
+  renderRatingCriteriaRows();
 };
 
 const initializeCategoryOptions = () => {
@@ -579,8 +701,8 @@ const buildHistoryEntryRow = (entry = {}) => {
       </select>
     </label>
     <label>
-      Score (1-10)
-      <input name="historyScore" type="number" min="1" max="10" step="0.1" value="${selectedScore}" required />
+      Score (-5 to 5)
+      <input name="historyScore" type="number" min="-5" max="5" step="0.1" value="${selectedScore}" required />
     </label>
     <label>
       History note
@@ -661,7 +783,7 @@ const collectHistoryEntries = () => {
       const createdAt = row.querySelector('input[name="historyCreatedAt"]').value;
       return { category, score, note, createdAt };
     })
-    .filter((entry) => entry.category && Number.isFinite(entry.score));
+    .filter((entry) => entry.category && Number.isFinite(entry.score) && entry.score >= -5 && entry.score <= 5);
 };
 
 const collectProfileNotes = () => {
@@ -717,13 +839,37 @@ const showAdminPage = (show) => {
 const buildRatingPayload = (data) => {
   const selectedProblem = (adminSettings.commonProblems || []).find((problem) => problem.id === commonProblemSelect?.value);
   const noteText = data.get('note').toString().trim();
-  const note = [selectedProblem?.name, noteText].filter(Boolean).join(' | ');
+  const goodNotes = data.get('goodNotes').toString().trim();
+  const badNotes = data.get('badNotes').toString().trim();
+  const selectedCriteria = ratingCriteria
+    .filter((criterion) => {
+      const toggle = form.querySelector(`[data-criterion-toggle="${criterion.id}"]`);
+      return toggle?.checked;
+    })
+    .map((criterion) => {
+      const scoreField = form.querySelector(`input[name="criterion-${criterion.id}"]:checked`);
+      const score = Number(scoreField?.value ?? 0);
+      const label = criterion.labels[String(score)] || '';
+      return { criterion: criterion.name, score, label };
+    });
+
+  const checklistAverage = selectedCriteria.length
+    ? Number((selectedCriteria.reduce((total, entry) => total + entry.score, 0) / selectedCriteria.length).toFixed(2))
+    : null;
+
+  const note = [
+    selectedProblem?.name,
+    selectedCriteria.length ? `Checklist: ${selectedCriteria.map((entry) => `${entry.criterion}=${entry.label} (${entry.score})`).join('; ')}` : '',
+    goodNotes ? `Good: ${goodNotes}` : '',
+    badNotes ? `Needs work: ${badNotes}` : '',
+    noteText,
+  ].filter(Boolean).join(' | ');
 
   return {
     workerName: data.get('workerName').toString().trim(),
     category: data.get('category').toString().trim(),
-    score: Number(data.get('score')),
-    reviewer: data.get('reviewer').toString().trim(),
+    score: checklistAverage,
+    reviewer: 'Anonymous',
     note,
     ratedAt: nowIso(),
   };
@@ -743,11 +889,17 @@ form.addEventListener('submit', async (event) => {
   const data = new FormData(form);
   const rating = buildRatingPayload(data);
 
+  if (!Number.isFinite(rating.score)) {
+    // eslint-disable-next-line no-alert
+    alert('Select at least one checklist item to create a rating.');
+    return;
+  }
+
   try {
     await submitRating(rating);
     form.reset();
-    document.getElementById('score').value = '5';
     initializeCategoryOptions();
+    renderCriterionRatings();
     if (ruleSelect) {
       ruleSelect.value = '';
     }
@@ -804,8 +956,6 @@ if (ruleSelect) {
     if (!selected) return;
 
     categorySelect.value = selected.category;
-    document.getElementById('score').value = String(selected.score);
-
     const noteField = document.getElementById('note');
     if (!noteField.value && selected.note) {
       noteField.value = selected.note;
@@ -823,10 +973,9 @@ if (applyRuleButton) {
     }
 
     const workerName = document.getElementById('workerName').value.trim();
-    const reviewer = document.getElementById('reviewer').value.trim();
-    if (!workerName || !reviewer) {
+    if (!workerName) {
       // eslint-disable-next-line no-alert
-      alert('Worker name and reviewer are required to apply a predefined rule.');
+      alert('Worker name is required to apply a predefined rule.');
       return;
     }
 
@@ -837,14 +986,13 @@ if (applyRuleButton) {
       workerName,
       category: selected.category,
       score: selected.score,
-      reviewer,
+      reviewer: 'Anonymous',
       note: combinedNote,
       ratedAt: nowIso(),
     };
 
     try {
       await submitRating(rating);
-      document.getElementById('score').value = '5';
       document.getElementById('note').value = '';
     } catch (error) {
       // eslint-disable-next-line no-alert
@@ -907,6 +1055,67 @@ if (adminSettingsForm) {
     saveAdminSettings();
     renderAdminSettings();
     renderAll(profilesCache);
+  });
+}
+
+if (criteriaRatingsContainer) {
+  criteriaRatingsContainer.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+
+    const criterionId = target.getAttribute('data-criterion-toggle');
+    if (!criterionId) return;
+
+    const scale = criteriaRatingsContainer.querySelector(`[data-criterion-scale="${criterionId}"]`);
+    scale?.classList.toggle('hidden', !target.checked);
+  });
+}
+
+if (addRatingCriterionButton) {
+  addRatingCriterionButton.addEventListener('click', () => {
+    const name = document.getElementById('criterion-name').value.trim();
+    const veryBad = document.getElementById('criterion-very-bad').value.trim();
+    const littleBad = document.getElementById('criterion-little-bad').value.trim();
+    const neutral = document.getElementById('criterion-neutral').value.trim();
+    const littleGood = document.getElementById('criterion-little-good').value.trim();
+    const veryGood = document.getElementById('criterion-very-good').value.trim();
+
+    if (!name) return;
+
+    ratingCriteria.push({
+      id: crypto.randomUUID(),
+      name,
+      labels: {
+        '-5': veryBad || 'Extremely bad',
+        '-2.5': littleBad || 'A little bad',
+        '0': neutral || 'No / average',
+        '2.5': littleGood || 'A little good',
+        '5': veryGood || 'Extremely good',
+      },
+    });
+
+    ['criterion-name', 'criterion-very-bad', 'criterion-little-bad', 'criterion-neutral', 'criterion-little-good', 'criterion-very-good'].forEach((fieldId) => {
+      document.getElementById(fieldId).value = '';
+    });
+
+    saveRatingCriteria();
+    renderRatingCriteriaRows();
+    renderCriterionRatings();
+  });
+}
+
+if (ratingCriteriaList) {
+  ratingCriteriaList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const criterionId = target.getAttribute('data-delete-criterion');
+    if (!criterionId) return;
+
+    ratingCriteria = ratingCriteria.filter((criterion) => criterion.id !== criterionId);
+    saveRatingCriteria();
+    renderRatingCriteriaRows();
+    renderCriterionRatings();
   });
 }
 
@@ -985,6 +1194,7 @@ window.addEventListener('popstate', () => {
 
 adminSettings = loadAdminSettings();
 ratingRules = loadRatingRules();
+ratingCriteria = loadRatingCriteria();
 initializeCategoryOptions();
 initializeStatusOptions();
 renderRules();
