@@ -73,6 +73,11 @@ let ratingRules = [];
 let adminSettings = { statusWeights: {}, jobTypes: [], checklistMathRules: [], customTags: [] };
 let ratingCriteria = [];
 let adminAccessUnlocked = localStorage.getItem(ADMIN_ACCESS_SESSION_KEY) === 'unlocked';
+let editingProfileId = null;
+let editingJobTypeName = null;
+let editingCriterionId = null;
+let editingCustomTagId = null;
+let editingChecklistMathRuleId = null;
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
@@ -306,6 +311,50 @@ const clearProfiles = async () => {
     if (!response.ok) throw new Error('Unable to clear profiles');
   } catch {
     saveLocalProfiles([]);
+  }
+};
+
+const updateProfile = async (profileId, payload) => {
+  try {
+    const response = await fetch(`${API_BASE}/profiles/${profileId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({}));
+      throw new Error(errorPayload.message || 'Unable to update profile');
+    }
+
+    return response.json();
+  } catch {
+    const profiles = loadLocalProfiles();
+    const profileIndex = profiles.findIndex((entry) => String(entry.id) === String(profileId));
+    if (profileIndex < 0) throw new Error('Profile not found');
+
+    const current = profiles[profileIndex];
+    profiles[profileIndex] = recalculateProfileFields({
+      ...current,
+      name: payload.name,
+      profileStatus: payload.status,
+      backgroundInfo: payload.background,
+      historyEntries: Array.isArray(payload.historyEntries) ? payload.historyEntries : (current.historyEntries || []),
+      profileNotes: Array.isArray(payload.profileNotes) ? payload.profileNotes : (current.profileNotes || []),
+      updatedAt: nowIso(),
+    });
+    saveLocalProfiles(profiles);
+    return profiles[profileIndex];
+  }
+};
+
+const deleteProfile = async (profileId) => {
+  try {
+    const response = await fetch(`${API_BASE}/profiles/${profileId}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Unable to delete profile');
+  } catch {
+    const profiles = loadLocalProfiles();
+    saveLocalProfiles(profiles.filter((entry) => String(entry.id) !== String(profileId)));
   }
 };
 
@@ -841,6 +890,7 @@ const renderProfiles = (profiles) => {
         <h4>Profile history summary</h4>
         ${renderHistorySummary(profile.historyEntries)}
       </div>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button><button type="button" class="secondary" data-delete-profile-id="${profile.id}">Delete</button></div>
     `;
     profilesList.appendChild(item);
   });
@@ -1460,6 +1510,36 @@ const resetNoteEntries = (entries = []) => {
   });
 };
 
+
+const resetProfileForm = () => {
+  addProfileForm.reset();
+  resetHistoryEntries();
+  resetNoteEntries();
+  editingProfileId = null;
+  const headerTitle = document.querySelector('#profile-page h2');
+  if (headerTitle) headerTitle.textContent = 'Create Worker Profile';
+};
+
+const openEditProfileForm = (profile) => {
+  if (!profile) return;
+
+  editingProfileId = profile.id;
+  showProfilePage(true);
+  const headerTitle = document.querySelector('#profile-page h2');
+  if (headerTitle) headerTitle.textContent = `Edit Worker Profile: ${profile.name}`;
+
+  const nameField = document.getElementById('profileName');
+  const statusField = document.getElementById('profileStatus');
+  const backgroundField = document.getElementById('profileBackground');
+
+  if (nameField) nameField.value = profile.name || '';
+  if (statusField) statusField.value = profile.profileStatus || '';
+  if (backgroundField) backgroundField.value = profile.backgroundInfo || '';
+
+  resetHistoryEntries(profile.historyEntries || []);
+  resetNoteEntries(profile.profileNotes || []);
+};
+
 const initializeStatusOptions = () => {
   const profileStatus = document.getElementById('profileStatus');
   const existing = Array.from(profileStatus.options).map((option) => option.value);
@@ -1756,9 +1836,16 @@ if (addJobTypeButton) {
 
     const name = nameField.value.trim();
     if (!name) return;
-    if ((adminSettings.jobTypes || []).some((jobType) => jobType.toLowerCase() == name.toLowerCase())) return;
 
-    adminSettings.jobTypes.push(name);
+    if ((adminSettings.jobTypes || []).some((jobType) => jobType.toLowerCase() === name.toLowerCase() && jobType !== editingJobTypeName)) return;
+
+    if (editingJobTypeName) {
+      adminSettings.jobTypes = (adminSettings.jobTypes || []).map((entry) => (entry === editingJobTypeName ? name : entry));
+    } else {
+      adminSettings.jobTypes.push(name);
+    }
+
+    editingJobTypeName = null;
     nameField.value = '';
     addJobTypePanel?.classList.add('hidden');
     persistAdminSettings({ rerenderAdmin: true });
@@ -1772,13 +1859,12 @@ if (jobTypesList) {
 
     const jobTypeToEdit = target.getAttribute('data-edit-job-type');
     if (jobTypeToEdit) {
-      const updatedName = window.prompt('Edit job type:', jobTypeToEdit);
-      if (updatedName === null) return;
-      const trimmed = updatedName.trim();
-      if (!trimmed) return;
-      if ((adminSettings.jobTypes || []).some((entry) => entry.toLowerCase() === trimmed.toLowerCase() && entry !== jobTypeToEdit)) return;
-      adminSettings.jobTypes = (adminSettings.jobTypes || []).map((entry) => (entry === jobTypeToEdit ? trimmed : entry));
-      persistAdminSettings({ rerenderAdmin: true });
+      const nameField = document.getElementById('job-type-name');
+      if (!nameField) return;
+      editingJobTypeName = jobTypeToEdit;
+      addJobTypePanel?.classList.remove('hidden');
+      nameField.value = jobTypeToEdit;
+      nameField.focus();
       return;
     }
 
@@ -1866,8 +1952,8 @@ if (addRatingCriterionButton) {
     if (!name) return;
     if ([veryBadWeight, littleBadWeight, neutralWeight, littleGoodWeight, veryGoodWeight].some((value) => Number.isNaN(value))) return;
 
-    ratingCriteria.push({
-      id: crypto.randomUUID(),
+    const criterionPayload = {
+      id: editingCriterionId || crypto.randomUUID(),
       name,
       labels: {
         '-5': veryBad || 'Extremely bad',
@@ -1883,7 +1969,11 @@ if (addRatingCriterionButton) {
         '2.5': littleGoodWeight,
         '5': veryGoodWeight,
       },
-    });
+    };
+
+    ratingCriteria = editingCriterionId
+      ? ratingCriteria.map((entry) => (entry.id === editingCriterionId ? criterionPayload : entry))
+      : [...ratingCriteria, criterionPayload];
 
     ['criterion-name', 'criterion-very-bad', 'criterion-little-bad', 'criterion-neutral', 'criterion-little-good', 'criterion-very-good'].forEach((fieldId) => {
       document.getElementById(fieldId).value = '';
@@ -1894,6 +1984,7 @@ if (addRatingCriterionButton) {
     document.getElementById('criterion-weight-little-good').value = '2.5';
     document.getElementById('criterion-weight-very-good').value = '5';
 
+    editingCriterionId = null;
     addRatingCriterionPanel?.classList.add('hidden');
     saveRatingCriteria();
     renderRatingCriteriaRows();
@@ -1911,33 +2002,20 @@ if (ratingCriteriaList) {
       const criterion = ratingCriteria.find((entry) => entry.id === criterionIdToEdit);
       if (!criterion) return;
 
-      const nextName = window.prompt('Checklist item name:', criterion.name);
-      if (nextName === null) return;
-      const name = nextName.trim();
-      if (!name) return;
-
-      const labels = { ...criterion.labels };
-      for (const scoreKey of ['-5', '-2.5', '0', '2.5', '5']) {
-        const nextLabel = window.prompt(`Label for ${scoreKey}:`, labels[scoreKey] || '');
-        if (nextLabel === null) return;
-        labels[scoreKey] = nextLabel.trim() || labels[scoreKey] || '';
-      }
-
-      const weights = { ...criterion.weights };
-      for (const scoreKey of ['-5', '-2.5', '0', '2.5', '5']) {
-        const nextWeightRaw = window.prompt(`Weight for ${scoreKey}:`, String(weights[scoreKey] ?? scoreKey));
-        if (nextWeightRaw === null) return;
-        const nextWeight = Number(nextWeightRaw);
-        if (Number.isNaN(nextWeight)) return;
-        weights[scoreKey] = nextWeight;
-      }
-
-      ratingCriteria = ratingCriteria.map((entry) => (entry.id === criterionIdToEdit ? { ...entry, name, labels, weights } : entry));
-      saveRatingCriteria();
-      renderRatingCriteriaRows();
-      renderCriterionRatings();
-      renderChecklistMathBuilderOptions();
-      renderChecklistMathRules();
+      editingCriterionId = criterionIdToEdit;
+      addRatingCriterionPanel?.classList.remove('hidden');
+      document.getElementById('criterion-name').value = criterion.name;
+      document.getElementById('criterion-very-bad').value = criterion.labels['-5'] || '';
+      document.getElementById('criterion-little-bad').value = criterion.labels['-2.5'] || '';
+      document.getElementById('criterion-neutral').value = criterion.labels['0'] || '';
+      document.getElementById('criterion-little-good').value = criterion.labels['2.5'] || '';
+      document.getElementById('criterion-very-good').value = criterion.labels['5'] || '';
+      document.getElementById('criterion-weight-very-bad').value = String(criterion.weights['-5'] ?? -5);
+      document.getElementById('criterion-weight-little-bad').value = String(criterion.weights['-2.5'] ?? -2.5);
+      document.getElementById('criterion-weight-neutral').value = String(criterion.weights['0'] ?? 0);
+      document.getElementById('criterion-weight-little-good').value = String(criterion.weights['2.5'] ?? 2.5);
+      document.getElementById('criterion-weight-very-good').value = String(criterion.weights['5'] ?? 5);
+      document.getElementById('criterion-name').focus();
       return;
     }
 
@@ -1955,6 +2033,7 @@ if (ratingCriteriaList) {
 if (addCustomTagButton) {
   addCustomTagButton.addEventListener('click', () => {
     if (!ensurePanelOpen(addCustomTagPanel, customTagNameInput)) return;
+    if (customTagNameInput) customTagNameInput.disabled = false;
 
     const label = String(customTagNameInput?.value || '').trim();
     const color = normalizeColorHex(customTagColorInput?.value || '#5f8df5');
@@ -1963,11 +2042,18 @@ if (addCustomTagButton) {
     const tags = normalizeCustomTags(adminSettings.customTags);
     if (tags.some((tag) => tag.label.toLowerCase() === label.toLowerCase())) return;
 
-    adminSettings.customTags = [
-      ...tags,
-      { id: crypto.randomUUID(), label, color, locked: false },
-    ];
+    adminSettings.customTags = editingCustomTagId
+      ? tags.map((tag) => {
+        if (tag.id !== editingCustomTagId) return tag;
+        if (tag.locked) return { ...tag, color };
+        return { ...tag, label, color };
+      })
+      : [
+        ...tags,
+        { id: crypto.randomUUID(), label, color, locked: false },
+      ];
 
+    editingCustomTagId = null;
     if (customTagNameInput) customTagNameInput.value = '';
     if (customTagColorInput) customTagColorInput.value = '#5f8df5';
     saveRecentTagColor(color);
@@ -1987,24 +2073,14 @@ if (customTagsList) {
       const selectedTag = tags.find((tag) => tag.id === editTagId);
       if (!selectedTag) return;
 
-      const nextLabelRaw = selectedTag.locked
-        ? selectedTag.label
-        : window.prompt('Edit tag name:', selectedTag.label);
-      if (nextLabelRaw === null) return;
-      const nextLabel = String(nextLabelRaw).trim();
-      if (!nextLabel) return;
-
-      const nextColorRaw = window.prompt('Edit tag color (hex like #5f8df5):', selectedTag.color || '#5f8df5');
-      if (nextColorRaw === null) return;
-      const nextColor = normalizeColorHex(nextColorRaw);
-      saveRecentTagColor(nextColor);
-
-      adminSettings.customTags = tags.map((tag) => {
-        if (tag.id !== editTagId) return tag;
-        if (tag.locked) return { ...tag, color: nextColor };
-        return { ...tag, label: nextLabel, color: nextColor };
-      });
-      persistAdminSettings({ rerenderAdmin: true });
+      editingCustomTagId = editTagId;
+      addCustomTagPanel?.classList.remove('hidden');
+      if (customTagNameInput) {
+        customTagNameInput.value = selectedTag.label;
+        customTagNameInput.disabled = selectedTag.locked;
+      }
+      if (customTagColorInput) customTagColorInput.value = normalizeColorHex(selectedTag.color || '#5f8df5');
+      if (!selectedTag.locked) customTagNameInput?.focus();
       return;
     }
 
@@ -2089,19 +2165,35 @@ if (addChecklistMathRuleButton) {
     if (!criterionId || !labelScore) return;
     if (!Number.isFinite(weightMultiplier) || weightMultiplier < 0) return;
 
-    adminSettings.checklistMathRules = [
-      ...normalizeChecklistMathRules(adminSettings.checklistMathRules),
-      {
-        id: crypto.randomUUID(),
-        criterionId,
-        labelScore,
-        reportsRange,
-        weightMultiplier,
-        tag,
-        insight,
-      },
-    ];
+    const rules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
+    adminSettings.checklistMathRules = editingChecklistMathRuleId
+      ? rules.map((rule) => (
+        rule.id === editingChecklistMathRuleId
+          ? {
+            ...rule,
+            criterionId,
+            labelScore,
+            reportsRange,
+            weightMultiplier,
+            tag,
+            insight,
+          }
+          : rule
+      ))
+      : [
+        ...rules,
+        {
+          id: crypto.randomUUID(),
+          criterionId,
+          labelScore,
+          reportsRange,
+          weightMultiplier,
+          tag,
+          insight,
+        },
+      ];
 
+    editingChecklistMathRuleId = null;
     if (mathReportRangeInput) mathReportRangeInput.value = '';
     if (mathWeightMultiplierInput) mathWeightMultiplierInput.value = '1';
     if (mathTagInput) mathTagInput.value = '';
@@ -2123,29 +2215,17 @@ if (checklistMathRulesList) {
       const selectedRule = rules.find((rule) => rule.id === editRuleId);
       if (!selectedRule) return;
 
-      const nextRange = window.prompt('Edit reports range:', selectedRule.reportsRange || '');
-      if (nextRange === null) return;
-      const nextWeightRaw = window.prompt('Edit weight multiplier:', String(selectedRule.weightMultiplier));
-      if (nextWeightRaw === null) return;
-      const nextWeight = Number(nextWeightRaw);
-      if (!Number.isFinite(nextWeight) || nextWeight < 0) return;
-      const nextTag = window.prompt('Edit tag (blank for none):', selectedRule.tag || '');
-      if (nextTag === null) return;
-      const nextInsight = window.prompt('Edit insight (blank for none):', selectedRule.insight || '');
-      if (nextInsight === null) return;
-
-      adminSettings.checklistMathRules = rules.map((rule) => (
-        rule.id === editRuleId
-          ? {
-            ...rule,
-            reportsRange: nextRange.trim(),
-            weightMultiplier: nextWeight,
-            tag: nextTag.trim(),
-            insight: nextInsight.trim(),
-          }
-          : rule
-      ));
-      persistAdminSettings({ rerenderAdmin: true });
+      editingChecklistMathRuleId = editRuleId;
+      addChecklistMathRulePanel?.classList.remove('hidden');
+      if (mathMainCriterionSelect) {
+        mathMainCriterionSelect.value = selectedRule.criterionId;
+        mathMainCriterionSelect.dispatchEvent(new Event('change'));
+      }
+      if (mathLabelSelect) mathLabelSelect.value = selectedRule.labelScore;
+      if (mathReportRangeInput) mathReportRangeInput.value = selectedRule.reportsRange || '';
+      if (mathWeightMultiplierInput) mathWeightMultiplierInput.value = String(selectedRule.weightMultiplier);
+      if (mathTagInput) mathTagInput.value = selectedRule.tag || '';
+      if (mathInsightInput) mathInsightInput.value = selectedRule.insight || '';
       return;
     }
 
@@ -2158,6 +2238,40 @@ if (checklistMathRulesList) {
   });
 }
 
+
+
+if (profilesList) {
+  profilesList.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const profileIdToEdit = target.getAttribute('data-edit-profile-id');
+    if (profileIdToEdit) {
+      const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToEdit));
+      if (!profile) return;
+      openEditProfileForm(profile);
+      return;
+    }
+
+    const profileIdToDelete = target.getAttribute('data-delete-profile-id');
+    if (!profileIdToDelete) return;
+
+    const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToDelete));
+    if (!profile) return;
+    if (!window.confirm(`Delete profile "${profile.name}"? This removes all ratings and notes for this worker.`)) return;
+
+    try {
+      await deleteProfile(profileIdToDelete);
+      if (String(workerSelector.value) === String(profileIdToDelete)) {
+        workerSelector.value = '';
+      }
+      await refreshFromBackend();
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error.message || 'Unable to delete profile');
+    }
+  });
+}
 
 if (workerProfileDetail) {
   workerProfileDetail.addEventListener('click', async (event) => {
@@ -2197,6 +2311,7 @@ if (workerProfileDetail) {
 }
 
 addProfileButton.addEventListener('click', () => {
+  resetProfileForm();
   showProfilePage(true);
 });
 
@@ -2209,9 +2324,7 @@ addNoteEntryButton.addEventListener('click', () => {
 });
 
 cancelAddProfileButton.addEventListener('click', () => {
-  addProfileForm.reset();
-  resetHistoryEntries();
-  resetNoteEntries();
+  resetProfileForm();
   showProfilePage(false);
 });
 
@@ -2228,14 +2341,14 @@ addProfileForm.addEventListener('submit', async (event) => {
   };
 
   try {
-    const savedProfile = await addProfile(profilePayload);
+    const savedProfile = editingProfileId
+      ? await updateProfile(editingProfileId, profilePayload)
+      : await addProfile(profilePayload);
     await refreshFromBackend();
     workerSelector.value = String(savedProfile.id);
     renderWorkerProfile(profilesCache, savedProfile.id);
     document.getElementById('workerName').value = savedProfile.name;
-    addProfileForm.reset();
-    resetHistoryEntries();
-    resetNoteEntries();
+    resetProfileForm();
     showProfilePage(false);
   } catch (error) {
     // eslint-disable-next-line no-alert

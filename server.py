@@ -654,6 +654,18 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
             return
 
         segments = [segment for segment in path.split('/') if segment]
+        if len(segments) == 3 and segments[0] == 'api' and segments[1] == 'profiles' and segments[2].isdigit():
+            worker_id = int(segments[2])
+
+            with db_connection() as connection:
+                cursor = connection.execute('DELETE FROM worker_profiles WHERE id = ?', (worker_id,))
+                if cursor.rowcount == 0:
+                    self._send_json(404, {'message': 'Profile not found'})
+                    return
+
+            self._send_no_content()
+            return
+
         if len(segments) == 5 and segments[0] == 'api' and segments[1] == 'profiles' and segments[2].isdigit() and segments[4].isdigit() and segments[3] in {'ratings', 'notes'}:
             worker_id = int(segments[2])
             entry_id = int(segments[4])
