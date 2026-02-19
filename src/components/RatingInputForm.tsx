@@ -19,14 +19,14 @@ const DEFAULT_SCORE = 5;
 
 export function RatingInputForm({ categories, reviewers, onSubmit }: RatingInputFormProps) {
   const [workerName, setWorkerName] = useState('');
-  const [category, setCategory] = useState(categories[0] ?? '');
+  const [category, setCategory] = useState('');
   const [score, setScore] = useState(DEFAULT_SCORE);
   const [note, setNote] = useState('');
   const [reviewer, setReviewer] = useState(reviewers[0] ?? '');
 
   const canSubmit = useMemo(() => {
-    return workerName.trim().length > 1 && category.length > 0 && reviewer.length > 0;
-  }, [workerName, category, reviewer]);
+    return workerName.trim().length > 1 && reviewer.length > 0;
+  }, [workerName, reviewer]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -61,13 +61,13 @@ export function RatingInputForm({ categories, reviewers, onSubmit }: RatingInput
       </div>
 
       <div>
-        <label htmlFor="job-category">Job category</label>
+        <label htmlFor="job-category">Job type (optional)</label>
         <select
           id="job-category"
           value={category}
           onChange={(event) => setCategory(event.target.value)}
-          required
         >
+          <option value="">No job type selected</option>
           {categories.map((item) => (
             <option key={item} value={item}>
               {item}
