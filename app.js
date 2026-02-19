@@ -41,12 +41,18 @@ const addJobTypeButton = document.getElementById('add-job-type');
 const criteriaRatingsContainer = document.getElementById('criterion-ratings');
 const ratingCriteriaList = document.getElementById('rating-criteria-list');
 const addRatingCriterionButton = document.getElementById('add-rating-criterion');
-const insightTabsList = document.getElementById('insight-tabs-list');
-const addInsightTabButton = document.getElementById('add-insight-tab');
-const insightTabLabelInput = document.getElementById('insight-tab-label');
-const insightTabTypeSelect = document.getElementById('insight-tab-type');
-const insightTabTriggerSelect = document.getElementById('insight-tab-trigger');
-const insightTabCustomInput = document.getElementById('insight-tab-custom');
+const checklistMathRulesList = document.getElementById('checklist-math-rules-list');
+const mathMainCriterionSelect = document.getElementById('math-main-criterion');
+const mathLabelSelect = document.getElementById('math-label');
+const mathReportRangeInput = document.getElementById('math-report-range');
+const mathWeightMultiplierInput = document.getElementById('math-weight-multiplier');
+const mathTagInput = document.getElementById('math-tag');
+const customTagsList = document.getElementById('custom-tags-list');
+const customTagNameInput = document.getElementById('custom-tag-name');
+const customTagColorInput = document.getElementById('custom-tag-color');
+const addCustomTagButton = document.getElementById('add-custom-tag');
+const mathInsightInput = document.getElementById('math-insight');
+const addChecklistMathRuleButton = document.getElementById('add-checklist-math-rule');
 const workerNameSelect = document.getElementById('workerName');
 const quickAddWorkerButton = document.getElementById('quick-add-worker');
 const quickWorkerNameInput = document.getElementById('quick-worker-name');
@@ -54,13 +60,15 @@ const quickWorkerFeedback = document.getElementById('quick-worker-feedback');
 
 let profilesCache = [];
 let ratingRules = [];
-let adminSettings = { statusWeights: {}, jobTypes: [], insightTabs: [] };
+let adminSettings = { statusWeights: {}, jobTypes: [], checklistMathRules: [], customTags: [] };
 let ratingCriteria = [];
 let adminAccessUnlocked = localStorage.getItem(ADMIN_ACCESS_SESSION_KEY) === 'unlocked';
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
 const nowIso = () => new Date().toISOString();
+
+const DEFAULT_STEADY_TAG = { id: 'steady-default', label: 'Steady', color: '#5f8df5', locked: true };
 
 const loadLocalProfiles = () => {
   try {
@@ -329,36 +337,43 @@ const deleteProfileNote = async (profileId, noteId) => {
 
 const DEFAULT_JOB_TYPES = ['Loading dock', 'Warehouse', 'Picker'];
 
-const defaultInsightTabs = () => ([
-  {
-    id: 'strength-default',
-    label: 'Strength Tags',
-    type: 'strength',
-    trigger: 'manual',
-    customText: '',
-  },
-  {
-    id: 'trend-default',
-    label: 'Trend Flags',
-    type: 'trend',
-    trigger: 'auto-if-flagged',
-    customText: '',
-  },
-]);
-
-const normalizeInsightTabs = (tabs) => {
-  const source = Array.isArray(tabs) ? tabs : defaultInsightTabs();
+const normalizeCustomTags = (tags) => {
+  const source = Array.isArray(tags) ? tags : [];
   const normalized = source
-    .filter((tab) => tab && String(tab.label || '').trim())
-    .map((tab) => ({
-      id: String(tab.id || crypto.randomUUID()),
-      label: String(tab.label || '').trim(),
-      type: ['strength', 'trend', 'custom'].includes(String(tab.type || '').toLowerCase()) ? String(tab.type || '').toLowerCase() : 'custom',
-      trigger: String(tab.trigger || '') === 'auto-if-flagged' ? 'auto-if-flagged' : 'manual',
-      customText: String(tab.customText || '').trim(),
+    .filter((tag) => tag && String(tag.label || '').trim())
+    .map((tag) => ({
+      id: String(tag.id || crypto.randomUUID()),
+      label: String(tag.label || '').trim(),
+      color: String(tag.color || '#5f8df5'),
+      locked: Boolean(tag.locked),
     }));
 
-  return normalized.length ? normalized : defaultInsightTabs();
+  const hasSteady = normalized.some((tag) => tag.label.toLowerCase() === 'steady' || tag.id === DEFAULT_STEADY_TAG.id);
+  if (!hasSteady) {
+    normalized.unshift({ ...DEFAULT_STEADY_TAG });
+  }
+
+  return normalized.map((tag) => (
+    (tag.label.toLowerCase() === 'steady' || tag.id === DEFAULT_STEADY_TAG.id)
+      ? { ...tag, id: DEFAULT_STEADY_TAG.id, label: 'Steady', color: tag.color || DEFAULT_STEADY_TAG.color, locked: true }
+      : tag
+  ));
+};
+
+const normalizeChecklistMathRules = (rules) => {
+  if (!Array.isArray(rules)) return [];
+
+  return rules
+    .filter((rule) => rule && String(rule.criterionId || '').trim() && String(rule.labelScore || '').trim())
+    .map((rule) => ({
+      id: String(rule.id || crypto.randomUUID()),
+      criterionId: String(rule.criterionId).trim(),
+      labelScore: String(rule.labelScore).trim(),
+      reportsRange: String(rule.reportsRange || '').trim(),
+      weightMultiplier: Number.isFinite(Number(rule.weightMultiplier)) ? Number(rule.weightMultiplier) : 1,
+      tag: String(rule.tag || '').trim(),
+      insight: String(rule.insight || '').trim(),
+    }));
 };
 
 
@@ -374,18 +389,19 @@ const loadAdminSettings = () => {
       ? [...new Set(parsed.jobTypes.map((item) => String(item || '').trim()).filter(Boolean))]
       : [...DEFAULT_JOB_TYPES];
 
-    const insightTabs = normalizeInsightTabs(parsed?.insightTabs);
 
     return {
       statusWeights,
       jobTypes: jobTypes.length ? jobTypes : [...DEFAULT_JOB_TYPES],
-      insightTabs,
+      checklistMathRules: normalizeChecklistMathRules(parsed?.checklistMathRules),
+      customTags: normalizeCustomTags(parsed?.customTags),
     };
   } catch {
     return {
       statusWeights: PROFILE_STATUSES.reduce((acc, status) => ({ ...acc, [status]: 0 }), {}),
       jobTypes: [...DEFAULT_JOB_TYPES],
-      insightTabs: defaultInsightTabs(),
+      checklistMathRules: [],
+      customTags: normalizeCustomTags([]),
     };
   }
 };
@@ -761,27 +777,6 @@ const renderWorkerProfile = (profiles, workerId) => {
 
   const badgeClass = ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
-  const insightTabs = normalizeInsightTabs(adminSettings.insightTabs);
-  const insightTabData = insightTabs.map((tab) => {
-    if (tab.type === 'strength') {
-      const items = deriveStrengthTags(ratings);
-      const hasSignal = items.length > 0 && items[0] !== 'Not enough history yet.';
-      return { ...tab, items, hasSignal };
-    }
-
-    if (tab.type === 'trend') {
-      const items = deriveTrendFlags(ratings);
-      const hasSignal = items.some((item) => item !== 'No active trend flags.');
-      return { ...tab, items, hasSignal };
-    }
-
-    const customItems = String(tab.customText || '').split('\n').map((line) => line.trim()).filter(Boolean);
-    const items = customItems.length ? customItems : ['No details configured yet.'];
-    return { ...tab, items, hasSignal: customItems.length > 0 };
-  });
-
-  const autoOpenTab = insightTabData.find((tab) => tab.trigger === 'auto-if-flagged' && tab.hasSignal);
-
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
@@ -805,16 +800,7 @@ const renderWorkerProfile = (profiles, workerId) => {
         <span>Positive streak: ${analytics.currentPositiveStreak || 0}</span>
         <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
-        ${insightTabData.map((tab) => `<button type="button" class="badge badge-button steady" data-pill-trigger="${tab.id}">${tab.label}</button>`).join('')}
       </div>
-      ${insightTabData.map((tab) => `
-        <div class="pill-popup ${autoOpenTab?.id === tab.id ? '' : 'hidden'}" data-pill-panel="${tab.id}">
-          <p class="hint"><strong>${tab.label}</strong></p>
-          <ul>
-            ${tab.items.map((item) => `<li>${item}</li>`).join('')}
-          </ul>
-        </div>
-      `).join('')}
     </div>
 
     <article class="category-history">
@@ -857,8 +843,120 @@ const renderJobTypeOptions = () => {
   }
 };
 
+const getCriterionLabelChoices = (criterionId) => {
+  const criterion = ratingCriteria.find((item) => item.id === criterionId);
+  if (!criterion) return [];
+
+  return SCORE_CHOICES.map((score) => ({
+    scoreKey: String(score),
+    display: criterion.labels[String(score)] || String(score),
+  }));
+};
+
+const renderChecklistMathBuilderOptions = () => {
+  if (!mathMainCriterionSelect || !mathLabelSelect) return;
+
+  const previousCriterionId = mathMainCriterionSelect.value;
+  mathMainCriterionSelect.innerHTML = '';
+
+  if (!ratingCriteria.length) {
+    mathMainCriterionSelect.innerHTML = '<option value="">Add a checklist item first</option>';
+    mathLabelSelect.innerHTML = '<option value="">No labels available</option>';
+    return;
+  }
+
+  ratingCriteria.forEach((criterion) => {
+    const option = document.createElement('option');
+    option.value = criterion.id;
+    option.textContent = criterion.name;
+    mathMainCriterionSelect.appendChild(option);
+  });
+
+  mathMainCriterionSelect.value = ratingCriteria.some((criterion) => criterion.id === previousCriterionId)
+    ? previousCriterionId
+    : ratingCriteria[0].id;
+
+  const labelChoices = getCriterionLabelChoices(mathMainCriterionSelect.value);
+  const previousLabelScore = mathLabelSelect.value;
+  mathLabelSelect.innerHTML = '';
+
+  labelChoices.forEach((choice) => {
+    const option = document.createElement('option');
+    option.value = choice.scoreKey;
+    option.textContent = choice.display;
+    mathLabelSelect.appendChild(option);
+  });
+
+  if (labelChoices.some((choice) => choice.scoreKey === previousLabelScore)) {
+    mathLabelSelect.value = previousLabelScore;
+  }
+};
+
+const renderChecklistMathRules = () => {
+  if (!checklistMathRulesList) return;
+
+  checklistMathRulesList.innerHTML = '';
+  const rules = normalizeChecklistMathRules(adminSettings.checklistMathRules);
+
+  if (!rules.length) {
+    checklistMathRulesList.innerHTML = '<p class="hint">No checklist math rules yet.</p>';
+    return;
+  }
+
+  rules.forEach((rule) => {
+    const criterion = ratingCriteria.find((item) => item.id === rule.criterionId);
+    const criterionName = criterion?.name || 'Unknown checklist item';
+    const labelText = criterion?.labels?.[rule.labelScore] || rule.labelScore;
+    const rangeText = rule.reportsRange || 'Any count';
+    const tags = normalizeCustomTags(adminSettings.customTags);
+    const matchingTag = tags.find((tag) => tag.label === rule.tag);
+    const tagText = rule.tag ? ` | Tag: <span class="badge custom-tag-preview" style="background:${matchingTag?.color || '#eef1fb'}; color:#1f2330;">${rule.tag}</span>` : '';
+    const insightText = rule.insight ? ` | Insight: ${rule.insight}` : '';
+
+    const row = document.createElement('div');
+    row.className = 'problem-row';
+    row.innerHTML = `
+      <span><strong>${criterionName}</strong> → ${labelText} | Reports: ${rangeText} | Weight x${rule.weightMultiplier}${tagText}${insightText}</span>
+      <button type="button" class="secondary" data-delete-checklist-math-rule="${rule.id}">Delete</button>
+    `;
+    checklistMathRulesList.appendChild(row);
+  });
+};
+
+const renderCustomTagOptions = () => {
+  if (!mathTagInput) return;
+  const previous = mathTagInput.value;
+  const tags = normalizeCustomTags(adminSettings.customTags);
+  mathTagInput.innerHTML = '<option value="">None</option>';
+  tags.forEach((tag) => {
+    const option = document.createElement('option');
+    option.value = tag.label;
+    option.textContent = tag.label;
+    mathTagInput.appendChild(option);
+  });
+  if ([...mathTagInput.options].some((option) => option.value === previous)) {
+    mathTagInput.value = previous;
+  }
+};
+
+const renderCustomTags = () => {
+  if (!customTagsList) return;
+  const tags = normalizeCustomTags(adminSettings.customTags);
+  customTagsList.innerHTML = '';
+
+  tags.forEach((tag) => {
+    const row = document.createElement('div');
+    row.className = 'problem-row';
+    row.innerHTML = `
+      <span><span class="badge custom-tag-preview" style="background:${tag.color}; color:#1f2330;">${tag.label}</span>${tag.locked ? ' (default)' : ''}</span>
+      ${tag.locked ? '<span class="hint">Locked</span>' : `<button type="button" class="secondary" data-delete-custom-tag="${tag.id}">Delete</button>`}
+    `;
+    customTagsList.appendChild(row);
+  });
+};
+
 const renderAdminSettings = () => {
-  if (!statusWeightsContainer || !jobTypesList || !insightTabsList) return;
+  if (!statusWeightsContainer || !jobTypesList) return;
 
   statusWeightsContainer.innerHTML = PROFILE_STATUSES.map((status) => `
     <label>
@@ -883,30 +981,10 @@ const renderAdminSettings = () => {
     jobTypesList.appendChild(row);
   });
 
-  insightTabsList.innerHTML = '';
-  normalizeInsightTabs(adminSettings.insightTabs).forEach((tab) => {
-    const row = document.createElement('div');
-    row.className = 'insight-tab-row';
-    row.innerHTML = `
-      <input type="text" value="${tab.label}" data-insight-field="label" data-insight-id="${tab.id}" aria-label="Insight tab label" />
-      <select data-insight-field="type" data-insight-id="${tab.id}" aria-label="Insight tab type">
-        <option value="strength" ${tab.type === 'strength' ? 'selected' : ''}>Strength Tags</option>
-        <option value="trend" ${tab.type === 'trend' ? 'selected' : ''}>Trend Flags</option>
-        <option value="custom" ${tab.type === 'custom' ? 'selected' : ''}>Custom text</option>
-      </select>
-      <select data-insight-field="trigger" data-insight-id="${tab.id}" aria-label="Insight tab trigger">
-        <option value="manual" ${tab.trigger === 'manual' ? 'selected' : ''}>Manual</option>
-        <option value="auto-if-flagged" ${tab.trigger === 'auto-if-flagged' ? 'selected' : ''}>Auto on issue</option>
-      </select>
-      <textarea rows="2" data-insight-field="customText" data-insight-id="${tab.id}" aria-label="Insight tab custom content" placeholder="One line per item">${tab.customText || ''}</textarea>
-      <div class="insight-tab-actions">
-        <button type="button" class="secondary" data-save-insight-id="${tab.id}">Save</button>
-        <button type="button" class="secondary" data-delete-insight-id="${tab.id}">Delete</button>
-      </div>
-    `;
-    insightTabsList.appendChild(row);
-  });
-
+  renderCustomTagOptions();
+  renderCustomTags();
+  renderChecklistMathBuilderOptions();
+  renderChecklistMathRules();
   renderJobTypeOptions();
 };
 
@@ -975,6 +1053,10 @@ const renderAll = (profiles) => {
   renderJobTypeOptions();
   renderCriterionRatings();
   renderRatingCriteriaRows();
+  renderCustomTagOptions();
+  renderCustomTags();
+  renderChecklistMathBuilderOptions();
+  renderChecklistMathRules();
 };
 
 const renderRuleSelect = () => {
@@ -1272,6 +1354,33 @@ const showAdminPage = (show) => {
   }
 };
 
+
+const setupAdminSectionToggles = () => {
+  document.querySelectorAll('#admin-settings-form .admin-section').forEach((section, index) => {
+    const legend = section.querySelector('legend');
+    if (!legend || legend.querySelector('[data-admin-section-toggle]')) return;
+
+    section.classList.add('is-open');
+    section.setAttribute('data-admin-section-index', String(index + 1));
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'admin-section-toggle';
+    toggle.setAttribute('data-admin-section-toggle', 'true');
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.textContent = 'Collapse';
+
+    toggle.addEventListener('click', () => {
+      const isOpen = section.classList.toggle('is-open');
+      section.classList.toggle('is-collapsed', !isOpen);
+      toggle.setAttribute('aria-expanded', String(isOpen));
+      toggle.textContent = isOpen ? 'Collapse' : 'Expand';
+    });
+
+    legend.appendChild(toggle);
+  });
+};
+
 const buildRatingPayload = (data) => {
   const noteText = data.get('note').toString().trim();
   const selectedCriteria = ratingCriteria
@@ -1378,61 +1487,6 @@ if (jobTypesList) {
     persistAdminSettings({ rerenderAdmin: true });
   });
 }
-
-if (addInsightTabButton) {
-  addInsightTabButton.addEventListener('click', () => {
-    const label = insightTabLabelInput?.value.trim() || '';
-    if (!label) return;
-
-    const nextTab = {
-      id: crypto.randomUUID(),
-      label,
-      type: String(insightTabTypeSelect?.value || 'custom'),
-      trigger: String(insightTabTriggerSelect?.value || 'manual'),
-      customText: String(insightTabCustomInput?.value || '').trim(),
-    };
-
-    adminSettings.insightTabs = [...normalizeInsightTabs(adminSettings.insightTabs), nextTab];
-
-    insightTabLabelInput.value = '';
-    if (insightTabCustomInput) insightTabCustomInput.value = '';
-    persistAdminSettings({ rerenderAdmin: true });
-  });
-}
-
-if (insightTabsList) {
-  insightTabsList.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-
-    const deleteId = target.getAttribute('data-delete-insight-id');
-    if (deleteId) {
-      adminSettings.insightTabs = normalizeInsightTabs(adminSettings.insightTabs).filter((tab) => tab.id !== deleteId);
-      persistAdminSettings({ rerenderAdmin: true });
-      return;
-    }
-
-    const saveId = target.getAttribute('data-save-insight-id');
-    if (!saveId) return;
-
-    const row = target.closest('.insight-tab-row');
-    if (!(row instanceof HTMLElement)) return;
-
-    const label = row.querySelector('[data-insight-field="label"]')?.value?.trim() || '';
-    const type = row.querySelector('[data-insight-field="type"]')?.value || 'custom';
-    const trigger = row.querySelector('[data-insight-field="trigger"]')?.value || 'manual';
-    const customText = row.querySelector('[data-insight-field="customText"]')?.value?.trim() || '';
-
-    if (!label) return;
-
-    adminSettings.insightTabs = normalizeInsightTabs(adminSettings.insightTabs).map((tab) => (
-      tab.id === saveId ? { ...tab, label, type, trigger, customText } : tab
-    ));
-    persistAdminSettings({ rerenderAdmin: true });
-  });
-}
-
-
 
 if (saveAdminPasswordButton) {
   saveAdminPasswordButton.addEventListener('click', () => {
@@ -1557,24 +1611,112 @@ if (ratingCriteriaList) {
 }
 
 
+if (addCustomTagButton) {
+  addCustomTagButton.addEventListener('click', () => {
+    const label = String(customTagNameInput?.value || '').trim();
+    const color = String(customTagColorInput?.value || '#5f8df5').trim();
+    if (!label) return;
+
+    const tags = normalizeCustomTags(adminSettings.customTags);
+    if (tags.some((tag) => tag.label.toLowerCase() === label.toLowerCase())) return;
+
+    adminSettings.customTags = [
+      ...tags,
+      { id: crypto.randomUUID(), label, color, locked: false },
+    ];
+
+    if (customTagNameInput) customTagNameInput.value = '';
+    if (customTagColorInput) customTagColorInput.value = '#5f8df5';
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+if (customTagsList) {
+  customTagsList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const tagId = target.getAttribute('data-delete-custom-tag');
+    if (!tagId) return;
+
+    adminSettings.customTags = normalizeCustomTags(adminSettings.customTags)
+      .filter((tag) => tag.id !== tagId || tag.locked);
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+if (mathMainCriterionSelect) {
+  mathMainCriterionSelect.addEventListener('change', () => {
+    const labelChoices = getCriterionLabelChoices(mathMainCriterionSelect.value);
+    const previousLabelScore = mathLabelSelect?.value || '';
+    if (!mathLabelSelect) return;
+
+    mathLabelSelect.innerHTML = '';
+    labelChoices.forEach((choice) => {
+      const option = document.createElement('option');
+      option.value = choice.scoreKey;
+      option.textContent = choice.display;
+      mathLabelSelect.appendChild(option);
+    });
+
+    if (labelChoices.some((choice) => choice.scoreKey === previousLabelScore)) {
+      mathLabelSelect.value = previousLabelScore;
+    }
+  });
+}
+
+if (addChecklistMathRuleButton) {
+  addChecklistMathRuleButton.addEventListener('click', () => {
+    const criterionId = String(mathMainCriterionSelect?.value || '').trim();
+    const labelScore = String(mathLabelSelect?.value || '').trim();
+    const reportsRange = String(mathReportRangeInput?.value || '').trim();
+    const weightMultiplier = Number(mathWeightMultiplierInput?.value || 1);
+    const tag = String(mathTagInput?.value || '').trim();
+    const insight = String(mathInsightInput?.value || '').trim();
+
+    if (!criterionId || !labelScore) return;
+    if (!Number.isFinite(weightMultiplier) || weightMultiplier < 0) return;
+
+    adminSettings.checklistMathRules = [
+      ...normalizeChecklistMathRules(adminSettings.checklistMathRules),
+      {
+        id: crypto.randomUUID(),
+        criterionId,
+        labelScore,
+        reportsRange,
+        weightMultiplier,
+        tag,
+        insight,
+      },
+    ];
+
+    if (mathReportRangeInput) mathReportRangeInput.value = '';
+    if (mathWeightMultiplierInput) mathWeightMultiplierInput.value = '1';
+    if (mathTagInput) mathTagInput.value = '';
+    if (mathInsightInput) mathInsightInput.value = '';
+
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+if (checklistMathRulesList) {
+  checklistMathRulesList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const ruleId = target.getAttribute('data-delete-checklist-math-rule');
+    if (!ruleId) return;
+
+    adminSettings.checklistMathRules = normalizeChecklistMathRules(adminSettings.checklistMathRules)
+      .filter((rule) => rule.id !== ruleId);
+    persistAdminSettings({ rerenderAdmin: true });
+  });
+}
+
+
 if (workerProfileDetail) {
   workerProfileDetail.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-
-    const pillTrigger = target.closest('[data-pill-trigger]');
-    if (pillTrigger instanceof HTMLElement) {
-      const panelName = pillTrigger.getAttribute('data-pill-trigger');
-      if (!panelName) return;
-
-      const panel = workerProfileDetail.querySelector(`[data-pill-panel="${panelName}"]`);
-      const isOpening = panel?.classList.contains('hidden');
-      workerProfileDetail.querySelectorAll('[data-pill-panel]').forEach((item) => item.classList.add('hidden'));
-      if (isOpening) {
-        panel?.classList.remove('hidden');
-      }
-      return;
-    }
 
     const profileId = target.getAttribute('data-profile-id');
     if (!profileId) return;
@@ -1705,6 +1847,7 @@ ratingCriteria = loadRatingCriteria();
 initializeStatusOptions();
 renderRules();
 renderAdminSettings();
+setupAdminSectionToggles();
 resetHistoryEntries();
 resetNoteEntries();
 if (window.location.hash === '#admin-settings') {
