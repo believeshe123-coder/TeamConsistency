@@ -247,6 +247,39 @@ select:user-invalid {
   margin: 0;
 }
 
+.admin-section {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 2px solid #707995;
+  background: #e6e9f4;
+  box-shadow: inset 1px 1px 0 #f8f9fd;
+}
+
+.admin-section legend {
+  padding: 2px 8px;
+  border: 1px solid #5e6883;
+  background: #cfd5e8;
+  font-weight: 700;
+}
+
+.criteria-config-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.criterion-config-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 92px;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.criterion-config-row .weight-field input {
+  width: 82px;
+  min-width: 82px;
+  padding: 2px 4px;
+}
+
 .profiles,
 .history-summary {
   list-style: none;
@@ -293,6 +326,18 @@ select:user-invalid {
 .criteria-list {
   display: grid;
   gap: 6px;
+}
+
+.entry-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.entry-row button {
+  margin-top: 0;
+  min-width: 70px;
 }
 
 .history-entry {

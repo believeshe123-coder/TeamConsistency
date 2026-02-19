@@ -29,8 +29,6 @@ const tabRatings = document.getElementById('tab-ratings');
 const tabAdmin = document.getElementById('tab-admin');
 const adminSettingsForm = document.getElementById('admin-settings-form');
 const statusWeightsContainer = document.getElementById('status-weights');
-const commonProblemsList = document.getElementById('common-problems-list');
-const addCommonProblemButton = document.getElementById('add-common-problem');
 const jobTypesList = document.getElementById('job-types-list');
 const addJobTypeButton = document.getElementById('add-job-type');
 const criteriaRatingsContainer = document.getElementById('criterion-ratings');
@@ -40,7 +38,7 @@ const workerNameOptions = document.getElementById('worker-name-options');
 
 let profilesCache = [];
 let ratingRules = [];
-let adminSettings = { statusWeights: {}, commonProblems: [], jobTypes: [] };
+let adminSettings = { statusWeights: {}, jobTypes: [] };
 let ratingCriteria = [];
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
@@ -111,23 +109,10 @@ const statusFromScore = (score) => {
 
 const getStatusWeight = (status) => Number(adminSettings.statusWeights?.[status] || 0);
 
-const getCommonProblemWeight = (noteText) => {
-  const normalized = String(noteText || '').trim().toLowerCase();
-  if (!normalized) return 0;
-
-  return (adminSettings.commonProblems || []).reduce((total, problem) => {
-    const name = String(problem.name || '').trim().toLowerCase();
-    if (!name) return total;
-    if (!normalized.includes(name)) return total;
-    return total + Number(problem.weight || 0);
-  }, 0);
-};
-
 const computeRankScore = (profile) => {
   const statusWeight = getStatusWeight(profile.profileStatus);
-  const commonProblemPenalty = (profile.ratings || []).reduce((total, entry) => total + getCommonProblemWeight(entry.note), 0);
-  const rankScore = Number((Number(profile.overallScore || 0) + statusWeight + commonProblemPenalty).toFixed(2));
-  return { rankScore, statusWeight, commonProblemPenalty };
+  const rankScore = Number((Number(profile.overallScore || 0) + statusWeight).toFixed(2));
+  return { rankScore, statusWeight };
 };
 
 const statusLabelFromClass = (badgeClass) => {
@@ -232,6 +217,42 @@ const clearProfiles = async () => {
   }
 };
 
+const deleteProfileRating = async (profileId, ratingId) => {
+  try {
+    const response = await fetch(`${API_BASE}/profiles/${profileId}/ratings/${ratingId}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Unable to delete rating');
+    return response.json();
+  } catch {
+    const profiles = loadLocalProfiles();
+    const profileIndex = profiles.findIndex((entry) => String(entry.id) === String(profileId));
+    if (profileIndex < 0) throw new Error('Profile not found');
+
+    const profile = profiles[profileIndex];
+    const filteredRatings = (profile.ratings || []).filter((entry) => String(entry.id) !== String(ratingId));
+    profiles[profileIndex] = recalculateProfileFields({ ...profile, ratings: filteredRatings, updatedAt: nowIso() });
+    saveLocalProfiles(profiles);
+    return profiles[profileIndex];
+  }
+};
+
+const deleteProfileNote = async (profileId, noteId) => {
+  try {
+    const response = await fetch(`${API_BASE}/profiles/${profileId}/notes/${noteId}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Unable to delete note');
+    return response.json();
+  } catch {
+    const profiles = loadLocalProfiles();
+    const profileIndex = profiles.findIndex((entry) => String(entry.id) === String(profileId));
+    if (profileIndex < 0) throw new Error('Profile not found');
+
+    const profile = profiles[profileIndex];
+    const filteredNotes = (profile.profileNotes || []).filter((entry) => String(entry.id) !== String(noteId));
+    profiles[profileIndex] = recalculateProfileFields({ ...profile, profileNotes: filteredNotes, updatedAt: nowIso() });
+    saveLocalProfiles(profiles);
+    return profiles[profileIndex];
+  }
+};
+
 const DEFAULT_JOB_TYPES = ['Loading dock', 'Warehouse', 'Picker'];
 
 const loadAdminSettings = () => {
@@ -242,21 +263,14 @@ const loadAdminSettings = () => {
       return acc;
     }, {});
 
-    const commonProblems = Array.isArray(parsed?.commonProblems)
-      ? parsed.commonProblems
-          .filter((item) => item && String(item.name || '').trim())
-          .map((item) => ({ id: String(item.id || crypto.randomUUID()), name: String(item.name).trim(), weight: Number(item.weight || 0) }))
-      : [];
-
     const jobTypes = Array.isArray(parsed?.jobTypes)
       ? [...new Set(parsed.jobTypes.map((item) => String(item || '').trim()).filter(Boolean))]
       : [...DEFAULT_JOB_TYPES];
 
-    return { statusWeights, commonProblems, jobTypes: jobTypes.length ? jobTypes : [...DEFAULT_JOB_TYPES] };
+    return { statusWeights, jobTypes: jobTypes.length ? jobTypes : [...DEFAULT_JOB_TYPES] };
   } catch {
     return {
       statusWeights: PROFILE_STATUSES.reduce((acc, status) => ({ ...acc, [status]: 0 }), {}),
-      commonProblems: [],
       jobTypes: [...DEFAULT_JOB_TYPES],
     };
   }
@@ -277,6 +291,13 @@ const defaultRatingCriteria = () => ([
       '2.5': 'Slightly early',
       '5': 'Extremely early',
     },
+    weights: {
+      '-5': -5,
+      '-2.5': -2.5,
+      '0': 0,
+      '2.5': 2.5,
+      '5': 5,
+    },
   },
   {
     id: crypto.randomUUID(),
@@ -287,6 +308,13 @@ const defaultRatingCriteria = () => ([
       '0': 'No / average',
       '2.5': 'A little good',
       '5': 'Extremely good',
+    },
+    weights: {
+      '-5': -5,
+      '-2.5': -2.5,
+      '0': 0,
+      '2.5': 2.5,
+      '5': 5,
     },
   },
 ]);
@@ -300,6 +328,7 @@ const loadRatingCriteria = () => {
       .filter((item) => item && String(item.name || '').trim())
       .map((item) => {
         const labels = item.labels || {};
+        const weights = item.weights || {};
         return {
           id: String(item.id || crypto.randomUUID()),
           name: String(item.name || '').trim(),
@@ -309,6 +338,13 @@ const loadRatingCriteria = () => {
             '0': String(labels['0'] || 'No / average').trim(),
             '2.5': String(labels['2.5'] || 'A little good').trim(),
             '5': String(labels['5'] || 'Extremely good').trim(),
+          },
+          weights: {
+            '-5': Number.isFinite(Number(weights['-5'])) ? Number(weights['-5']) : -5,
+            '-2.5': Number.isFinite(Number(weights['-2.5'])) ? Number(weights['-2.5']) : -2.5,
+            '0': Number.isFinite(Number(weights['0'])) ? Number(weights['0']) : 0,
+            '2.5': Number.isFinite(Number(weights['2.5'])) ? Number(weights['2.5']) : 2.5,
+            '5': Number.isFinite(Number(weights['5'])) ? Number(weights['5']) : 5,
           },
         };
       });
@@ -372,13 +408,13 @@ const buildCategoryHistory = (ratings) => {
   }, {});
 };
 
-const renderProfileNotesTimeline = (profileNotes) => {
+const renderProfileNotesTimeline = (profileId, profileNotes) => {
   if (!profileNotes?.length) {
     return '<p class="hint">No timed profile notes saved yet.</p>';
   }
 
   const rows = profileNotes
-    .map((entry) => `<li><strong>${formatTimestamp(entry.createdAt)}:</strong> ${entry.note}</li>`)
+    .map((entry) => `<li class="entry-row"><span><strong>${formatTimestamp(entry.createdAt)}:</strong> ${entry.note}</span><button type="button" class="secondary" data-delete-note-id="${entry.id}" data-profile-id="${profileId}">Remove</button></li>`)
     .join('');
 
   return `<ul class="history-summary">${rows}</ul>`;
@@ -393,6 +429,24 @@ const renderHistorySummary = (historyEntries) => {
     .map((entry) => {
       const detail = entry.note ? ` — ${entry.note}` : '';
       return `<li><label><input type="checkbox" checked disabled /> ${entry.category}: ${entry.score}${detail} <span class="hint">(${formatTimestamp(entry.createdAt)})</span></label></li>`;
+    })
+    .join('');
+
+  return `<ul class="history-summary">${rows}</ul>`;
+};
+
+
+const renderExactRatings = (profileId, ratings) => {
+  if (!ratings?.length) {
+    return '<p class="hint">No ratings saved yet.</p>';
+  }
+
+  const rows = [...ratings]
+    .sort((a, b) => new Date(b.ratedAt).getTime() - new Date(a.ratedAt).getTime())
+    .map((entry) => {
+      const date = formatTimestamp(entry.ratedAt);
+      const note = entry.note ? `<p class="hint">${entry.note}</p>` : '';
+      return `<li class="entry-row"><div><strong>${date}</strong> — ${entry.category}: ${entry.score}${note}</div><button type="button" class="secondary" data-delete-rating-id="${entry.id}" data-profile-id="${profileId}">Remove</button></li>`;
     })
     .join('');
 
@@ -414,7 +468,7 @@ const renderProfiles = (profiles) => {
     const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
     const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
     const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
-    const { rankScore, statusWeight, commonProblemPenalty } = computeRankScore(profile);
+    const { rankScore, statusWeight } = computeRankScore(profile);
 
     item.innerHTML = `
       <strong>${profile.name}</strong>
@@ -425,7 +479,6 @@ const renderProfiles = (profiles) => {
         <span>Avg score: ${profile.overallScore}</span>
         <span>Rank score: ${rankScore}</span>
         <span>Status weight: ${statusWeight}</span>
-        <span>Common problem weight: ${commonProblemPenalty}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
       ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
@@ -503,7 +556,7 @@ const renderWorkerProfile = (profiles, workerId) => {
 
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
-  const { rankScore, statusWeight, commonProblemPenalty } = computeRankScore(profile);
+  const { rankScore, statusWeight } = computeRankScore(profile);
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
@@ -513,18 +566,24 @@ const renderWorkerProfile = (profiles, workerId) => {
         <span>Overall avg: ${profile.overallScore}</span>
         <span>Rank score: ${rankScore}</span>
         <span>Status weight: ${statusWeight}</span>
-        <span>Common problem weight: ${commonProblemPenalty}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
-      ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
+      <article class="category-history">
+        <h4>Background</h4>
+        ${profile.backgroundInfo ? `<p>${profile.backgroundInfo}</p>` : '<p class="hint">No background info added yet.</p>'}
+      </article>
     </div>
+    <article class="category-history">
+      <h4>Exact ratings</h4>
+      ${renderExactRatings(profile.id, profile.ratings)}
+    </article>
     <article class="category-history">
       <h4>Saved profile history checklist</h4>
       ${renderHistorySummary(profile.historyEntries)}
     </article>
     <article class="category-history">
       <h4>Timed profile notes</h4>
-      ${renderProfileNotesTimeline(profile.profileNotes)}
+      ${renderProfileNotesTimeline(profile.id, profile.profileNotes)}
     </article>
     <div class="category-history-grid">${categorySections}</div>
   `;
@@ -549,7 +608,7 @@ const renderJobTypeOptions = () => {
 };
 
 const renderAdminSettings = () => {
-  if (!statusWeightsContainer || !commonProblemsList || !jobTypesList) return;
+  if (!statusWeightsContainer || !jobTypesList) return;
 
   statusWeightsContainer.innerHTML = PROFILE_STATUSES.map((status) => `
     <label>
@@ -574,22 +633,6 @@ const renderAdminSettings = () => {
     jobTypesList.appendChild(row);
   });
 
-  commonProblemsList.innerHTML = '';
-
-  if (!(adminSettings.commonProblems || []).length) {
-    commonProblemsList.innerHTML = '<p class="hint">No common problems yet.</p>';
-  }
-
-  (adminSettings.commonProblems || []).forEach((problem) => {
-    const row = document.createElement('div');
-    row.className = 'problem-row';
-    row.innerHTML = `
-      <span><strong>${problem.name}</strong> (weight: ${problem.weight})</span>
-      <button type="button" class="secondary" data-delete-problem="${problem.id}">Delete</button>
-    `;
-    commonProblemsList.appendChild(row);
-  });
-
   renderJobTypeOptions();
 };
 
@@ -607,7 +650,7 @@ const renderRatingCriteriaRows = () => {
     const row = document.createElement('div');
     row.className = 'problem-row';
     row.innerHTML = `
-      <span><strong>${criterion.name}</strong> — ${criterion.labels['-5']} | ${criterion.labels['-2.5']} | ${criterion.labels['0']} | ${criterion.labels['2.5']} | ${criterion.labels['5']}</span>
+      <span><strong>${criterion.name}</strong> — ${criterion.labels['-5']} (w:${criterion.weights?.['-5'] ?? -5}) | ${criterion.labels['-2.5']} (w:${criterion.weights?.['-2.5'] ?? -2.5}) | ${criterion.labels['0']} (w:${criterion.weights?.['0'] ?? 0}) | ${criterion.labels['2.5']} (w:${criterion.weights?.['2.5'] ?? 2.5}) | ${criterion.labels['5']} (w:${criterion.weights?.['5'] ?? 5})</span>
       <button type="button" class="secondary" data-delete-criterion="${criterion.id}">Delete</button>
     `;
     ratingCriteriaList.appendChild(row);
@@ -628,7 +671,7 @@ const renderCriterionRatings = () => {
         <span>${criterion.name}</span>
       </label>
       <div class="criterion-scale hidden" data-criterion-scale="${criterion.id}">
-        ${SCORE_CHOICES.map((value) => `<label><input type="radio" name="criterion-${criterion.id}" value="${value}" ${value === 0 ? 'checked' : ''} /> <span>${criterion.labels[String(value)]}</span></label>`).join('')}
+        ${SCORE_CHOICES.map((value) => `<label><input type="radio" name="criterion-${criterion.id}" value="${value}" ${value === 0 ? 'checked' : ''} /> <span>${criterion.labels[String(value)]} (w:${criterion.weights?.[String(value)] ?? value})</span></label>`).join('')}
       </div>
     `;
     criteriaRatingsContainer.appendChild(row);
@@ -856,15 +899,16 @@ const buildRatingPayload = (data) => {
       const scoreField = form.querySelector(`input[name="criterion-${criterion.id}"]:checked`);
       const score = Number(scoreField?.value ?? 0);
       const label = criterion.labels[String(score)] || '';
-      return { criterion: criterion.name, score, label };
+      const weightedScore = Number(criterion.weights?.[String(score)] ?? score);
+      return { criterion: criterion.name, score, weightedScore, label };
     });
 
   const checklistAverage = selectedCriteria.length
-    ? Number((selectedCriteria.reduce((total, entry) => total + entry.score, 0) / selectedCriteria.length).toFixed(2))
+    ? Number((selectedCriteria.reduce((total, entry) => total + entry.weightedScore, 0) / selectedCriteria.length).toFixed(2))
     : null;
 
   const note = [
-    selectedCriteria.length ? `Checklist: ${selectedCriteria.map((entry) => `${entry.criterion}=${entry.label} (${entry.score})`).join('; ')}` : '',
+    selectedCriteria.length ? `Checklist: ${selectedCriteria.map((entry) => `${entry.criterion}=${entry.label} (base:${entry.score}, weight:${entry.weightedScore})`).join('; ')}` : '',
     noteText,
   ].filter(Boolean).join(' | ');
 
@@ -924,21 +968,6 @@ if (tabAdmin) {
   });
 }
 
-if (addCommonProblemButton) {
-  addCommonProblemButton.addEventListener('click', () => {
-    const nameField = document.getElementById('problem-name');
-    const weightField = document.getElementById('problem-weight');
-    const name = nameField.value.trim();
-    const weight = Number(weightField.value);
-
-    if (!name || Number.isNaN(weight)) return;
-
-    adminSettings.commonProblems.push({ id: crypto.randomUUID(), name, weight });
-    nameField.value = '';
-    weightField.value = '-2';
-    renderAdminSettings();
-  });
-}
 
 if (addJobTypeButton) {
   addJobTypeButton.addEventListener('click', () => {
@@ -968,18 +997,6 @@ if (jobTypesList) {
   });
 }
 
-if (commonProblemsList) {
-  commonProblemsList.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-
-    const problemId = target.getAttribute('data-delete-problem');
-    if (!problemId) return;
-
-    adminSettings.commonProblems = adminSettings.commonProblems.filter((problem) => problem.id !== problemId);
-    renderAdminSettings();
-  });
-}
 
 if (adminSettingsForm) {
   adminSettingsForm.addEventListener('submit', (event) => {
@@ -1017,8 +1034,14 @@ if (addRatingCriterionButton) {
     const neutral = document.getElementById('criterion-neutral').value.trim();
     const littleGood = document.getElementById('criterion-little-good').value.trim();
     const veryGood = document.getElementById('criterion-very-good').value.trim();
+    const veryBadWeight = Number(document.getElementById('criterion-weight-very-bad').value);
+    const littleBadWeight = Number(document.getElementById('criterion-weight-little-bad').value);
+    const neutralWeight = Number(document.getElementById('criterion-weight-neutral').value);
+    const littleGoodWeight = Number(document.getElementById('criterion-weight-little-good').value);
+    const veryGoodWeight = Number(document.getElementById('criterion-weight-very-good').value);
 
     if (!name) return;
+    if ([veryBadWeight, littleBadWeight, neutralWeight, littleGoodWeight, veryGoodWeight].some((value) => Number.isNaN(value))) return;
 
     ratingCriteria.push({
       id: crypto.randomUUID(),
@@ -1030,11 +1053,23 @@ if (addRatingCriterionButton) {
         '2.5': littleGood || 'A little good',
         '5': veryGood || 'Extremely good',
       },
+      weights: {
+        '-5': veryBadWeight,
+        '-2.5': littleBadWeight,
+        '0': neutralWeight,
+        '2.5': littleGoodWeight,
+        '5': veryGoodWeight,
+      },
     });
 
     ['criterion-name', 'criterion-very-bad', 'criterion-little-bad', 'criterion-neutral', 'criterion-little-good', 'criterion-very-good'].forEach((fieldId) => {
       document.getElementById(fieldId).value = '';
     });
+    document.getElementById('criterion-weight-very-bad').value = '-5';
+    document.getElementById('criterion-weight-little-bad').value = '-2.5';
+    document.getElementById('criterion-weight-neutral').value = '0';
+    document.getElementById('criterion-weight-little-good').value = '2.5';
+    document.getElementById('criterion-weight-very-good').value = '5';
 
     saveRatingCriteria();
     renderRatingCriteriaRows();
@@ -1054,6 +1089,44 @@ if (ratingCriteriaList) {
     saveRatingCriteria();
     renderRatingCriteriaRows();
     renderCriterionRatings();
+  });
+}
+
+
+if (workerProfileDetail) {
+  workerProfileDetail.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const profileId = target.getAttribute('data-profile-id');
+    if (!profileId) return;
+
+    const ratingId = target.getAttribute('data-delete-rating-id');
+    if (ratingId) {
+      try {
+        await deleteProfileRating(profileId, ratingId);
+        await refreshFromBackend();
+        workerSelector.value = String(profileId);
+        renderWorkerProfile(profilesCache, profileId);
+      } catch (error) {
+        // eslint-disable-next-line no-alert
+        alert(error.message || 'Unable to delete rating');
+      }
+      return;
+    }
+
+    const noteId = target.getAttribute('data-delete-note-id');
+    if (noteId) {
+      try {
+        await deleteProfileNote(profileId, noteId);
+        await refreshFromBackend();
+        workerSelector.value = String(profileId);
+        renderWorkerProfile(profilesCache, profileId);
+      } catch (error) {
+        // eslint-disable-next-line no-alert
+        alert(error.message || 'Unable to delete note');
+      }
+    }
   });
 }
 

@@ -281,6 +281,16 @@ def build_profile(connection: sqlite3.Connection, profile_row: sqlite3.Row) -> d
     }
 
 
+def delete_rating(connection: sqlite3.Connection, worker_id: int, rating_id: int) -> bool:
+    cursor = connection.execute('DELETE FROM worker_ratings WHERE id = ? AND worker_id = ?', (rating_id, worker_id))
+    return cursor.rowcount > 0
+
+
+def delete_profile_note(connection: sqlite3.Connection, worker_id: int, note_id: int) -> bool:
+    cursor = connection.execute('DELETE FROM worker_profile_notes WHERE id = ? AND worker_id = ?', (note_id, worker_id))
+    return cursor.rowcount > 0
+
+
 class WorkerAPIHandler(SimpleHTTPRequestHandler):
     def _send_json(self, status_code: int, payload: dict | list) -> None:
         body = json.dumps(payload).encode('utf-8')
@@ -556,17 +566,45 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
-        if parsed.path != '/api/profiles':
-            self._send_json(404, {'message': 'Not found'})
+        path = parsed.path
+
+        if path == '/api/profiles':
+            with db_connection() as connection:
+                connection.execute('DELETE FROM worker_profile_notes')
+                connection.execute('DELETE FROM worker_profile_history')
+                connection.execute('DELETE FROM worker_ratings')
+                connection.execute('DELETE FROM worker_profiles')
+
+            self._send_no_content()
             return
 
-        with db_connection() as connection:
-            connection.execute('DELETE FROM worker_profile_notes')
-            connection.execute('DELETE FROM worker_profile_history')
-            connection.execute('DELETE FROM worker_ratings')
-            connection.execute('DELETE FROM worker_profiles')
+        segments = [segment for segment in path.split('/') if segment]
+        if len(segments) == 5 and segments[0] == 'api' and segments[1] == 'profiles' and segments[2].isdigit() and segments[4].isdigit() and segments[3] in {'ratings', 'notes'}:
+            worker_id = int(segments[2])
+            entry_id = int(segments[4])
 
-        self._send_no_content()
+            with db_connection() as connection:
+                row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
+                if row is None:
+                    self._send_json(404, {'message': 'Profile not found'})
+                    return
+
+                if segments[3] == 'ratings':
+                    deleted = delete_rating(connection, worker_id, entry_id)
+                else:
+                    deleted = delete_profile_note(connection, worker_id, entry_id)
+
+                if not deleted:
+                    self._send_json(404, {'message': 'Entry not found'})
+                    return
+
+                row = connection.execute('SELECT * FROM worker_profiles WHERE id = ?', (worker_id,)).fetchone()
+                profile = build_profile(connection, row)
+
+            self._send_json(200, profile)
+            return
+
+        self._send_json(404, {'message': 'Not found'})
 
 
 if __name__ == '__main__':
