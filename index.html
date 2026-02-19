@@ -26,9 +26,8 @@
             <div class="field-grid">
               <label>
                 <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
-                <input id="workerName" name="workerName" type="text" list="worker-name-options" required minlength="2" placeholder="Jordan Patel" aria-describedby="worker-name-error" />
-                <datalist id="worker-name-options"></datalist>
-                <span id="worker-name-error" class="field-error">Enter at least 2 characters for worker name.</span>
+                <select id="workerName" name="workerName" required aria-describedby="worker-name-error"></select>
+                <span id="worker-name-error" class="field-error">Select a worker before saving. If none appear, add a profile first.</span>
               </label>
 
               <label>

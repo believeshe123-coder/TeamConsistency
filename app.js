@@ -34,7 +34,7 @@ const addJobTypeButton = document.getElementById('add-job-type');
 const criteriaRatingsContainer = document.getElementById('criterion-ratings');
 const ratingCriteriaList = document.getElementById('rating-criteria-list');
 const addRatingCriterionButton = document.getElementById('add-rating-criterion');
-const workerNameOptions = document.getElementById('worker-name-options');
+const workerNameSelect = document.getElementById('workerName');
 
 let profilesCache = [];
 let ratingRules = [];
@@ -504,17 +504,33 @@ const renderWorkerSelector = (profiles) => {
   });
 };
 
-const renderWorkerNameSuggestions = (profiles) => {
-  if (!workerNameOptions) return;
-  workerNameOptions.innerHTML = '';
+const renderWorkerNameOptions = (profiles) => {
+  if (!workerNameSelect) return;
 
-  [...profiles]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .forEach((profile) => {
-      const option = document.createElement('option');
-      option.value = profile.name;
-      workerNameOptions.appendChild(option);
-    });
+  const previous = workerNameSelect.value;
+  const sortedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
+
+  workerNameSelect.innerHTML = '';
+
+  if (!sortedProfiles.length) {
+    workerNameSelect.innerHTML = '<option value="">No workers yet — add a profile first</option>';
+    workerNameSelect.disabled = true;
+    return;
+  }
+
+  workerNameSelect.disabled = false;
+  workerNameSelect.innerHTML = '<option value="">Select a worker</option>';
+
+  sortedProfiles.forEach((profile) => {
+    const option = document.createElement('option');
+    option.value = profile.name;
+    option.textContent = profile.name;
+    workerNameSelect.appendChild(option);
+  });
+
+  if (previous && sortedProfiles.some((profile) => profile.name === previous)) {
+    workerNameSelect.value = previous;
+  }
 };
 
 const renderWorkerProfile = (profiles, workerId) => {
@@ -681,7 +697,7 @@ const renderCriterionRatings = () => {
 const renderAll = (profiles) => {
   renderProfiles(profiles);
   renderWorkerSelector(profiles);
-  renderWorkerNameSuggestions(profiles);
+  renderWorkerNameOptions(profiles);
   renderWorkerProfile(profiles, workerSelector.value);
   renderJobTypeOptions();
   renderCriterionRatings();
