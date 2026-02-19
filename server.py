@@ -210,6 +210,33 @@ def ensure_uniqueness_indexes(connection: sqlite3.Connection) -> None:
     )
 
 
+def find_profile_by_rating_identity(
+    connection: sqlite3.Connection,
+    worker_name: str,
+    canonical_key: str,
+    external_employee_id: str | None,
+) -> sqlite3.Row | None:
+    existing = connection.execute(
+        'SELECT * FROM worker_profiles WHERE canonical_worker_key = ?',
+        (canonical_key,),
+    ).fetchone()
+    if existing is not None:
+        return existing
+
+    if external_employee_id is not None:
+        return None
+
+    normalized_name = normalize_worker_name(worker_name)
+    name_matches = connection.execute(
+        'SELECT * FROM worker_profiles WHERE canonical_name = ? ORDER BY updated_at DESC, id DESC',
+        (normalized_name,),
+    ).fetchall()
+    if len(name_matches) == 1:
+        return name_matches[0]
+
+    return None
+
+
 def load_admin_list(connection: sqlite3.Connection, key: str, default: list[str] | None = None) -> list[str]:
     row = connection.execute('SELECT value FROM admin_catalog WHERE key = ?', (key,)).fetchone()
     if row is None:
@@ -769,10 +796,12 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
 
             try:
                 with db_connection() as connection:
-                    existing = connection.execute(
-                        'SELECT * FROM worker_profiles WHERE canonical_worker_key = ?',
-                        (key,),
-                    ).fetchone()
+                    existing = find_profile_by_rating_identity(
+                        connection,
+                        worker_name,
+                        key,
+                        external_employee_id,
+                    )
 
                     if existing is None:
                         cursor = connection.execute(
@@ -832,10 +861,12 @@ class WorkerAPIHandler(SimpleHTTPRequestHandler):
                         self._send_json(400, {'message': allowed_error})
                         return
 
-                    existing = connection.execute(
-                        'SELECT * FROM worker_profiles WHERE canonical_worker_key = ?',
-                        (key,),
-                    ).fetchone()
+                    existing = find_profile_by_rating_identity(
+                        connection,
+                        worker_name,
+                        key,
+                        external_employee_id,
+                    )
 
                     if existing is None:
                         cursor = connection.execute(
