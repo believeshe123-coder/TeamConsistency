@@ -128,6 +128,15 @@ h2 {
   gap: var(--space-2);
 }
 
+.rating-primary-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.rating-primary-fields > label {
+  align-content: start;
+}
+
 label {
   display: grid;
   gap: 2px;
@@ -142,6 +151,21 @@ label {
   color: var(--danger);
   margin-left: 2px;
   font-weight: 700;
+}
+
+.quick-worker-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.quick-worker-add button {
+  margin-top: 0;
+}
+
+#quick-worker-feedback {
+  min-height: 1.2em;
 }
 
 input,
@@ -317,6 +341,46 @@ select:user-invalid {
   margin-top: var(--space-3);
 }
 
+
+.profile-score-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-2);
+}
+
+.profile-score-card {
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  padding: var(--space-2);
+  display: grid;
+  gap: 2px;
+}
+
+.profile-score-card strong {
+  font-size: 16px;
+}
+
+.job-score-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.job-score-table th,
+.job-score-table td {
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.job-score-table th {
+  background: #d9ddee;
+}
+
+.category-history details,
+.category-history summary {
+  cursor: pointer;
+}
 .history-fieldset {
   margin-top: var(--space-2);
   padding: var(--space-2);
@@ -429,3 +493,15 @@ select:user-invalid {
     border-top: 1px solid var(--border);
   }
 }
+
+
+@media (max-width: 560px) {
+  .rating-primary-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-worker-add {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -23,7 +23,7 @@
           <h2>1) Add a New Rating</h2>
           <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>. Fill worker details, score at least one checklist item, and save.</p>
           <form id="rating-form">
-            <div class="field-grid">
+            <div class="field-grid rating-primary-fields">
               <label>
                 <span class="label-text">Worker name <span class="required-indicator" aria-hidden="true">*</span></span>
                 <select id="workerName" name="workerName" required aria-describedby="worker-name-error"></select>
@@ -67,22 +67,15 @@
               <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
               <select id="worker-selector" aria-label="Select worker profile"></select>
             </label>
+            <p class="hint">Quick add worker: type a name below to add them to the system (name only).</p>
+            <div class="quick-worker-add">
+              <input id="quick-worker-name" type="text" placeholder="Add worker by name" minlength="2" />
+              <button type="button" id="quick-add-worker" class="secondary">Add worker</button>
+            </div>
+            <p id="quick-worker-feedback" class="hint" aria-live="polite"></p>
             <div id="worker-profile-detail" class="profile-detail">
               <p class="hint">Choose a worker to inspect category-level history, note timeline, and score trend.</p>
             </div>
-          </section>
-
-          <section class="card">
-            <div class="section-header">
-              <h2>3) Manage Profiles</h2>
-              <div class="section-actions">
-                <button type="button" id="add-profile" class="secondary">Add Profile</button>
-                <button type="button" id="clear-data" class="secondary">Clear all</button>
-              </div>
-            </div>
-            <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
-            <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
-            <ul id="profiles" class="profiles"></ul>
           </section>
         </div>
       </section>
@@ -235,6 +228,19 @@
               <button type="submit">Save admin settings</button>
             </div>
           </form>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <h2>Manage Profiles</h2>
+            <div class="section-actions">
+              <button type="button" id="add-profile" class="secondary">Add Profile</button>
+              <button type="button" id="clear-data" class="secondary">Clear all</button>
+            </div>
+          </div>
+          <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
+          <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
+          <ul id="profiles" class="profiles"></ul>
         </section>
       </section>
     </main>
