@@ -1272,6 +1272,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
 
   if (condensed) {
     const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
+    const rankText = rankPosition && totalWorkers ? `Rank #${rankPosition}/${totalWorkers}` : '';
     return `
       <div class="profile-item-head">
         <strong>${profile.name}</strong>
@@ -1281,6 +1282,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
         <span>Consistent for: ${computeConsistentDays(profile)} day(s)</span>
       </div>
+      ${rankText ? `<p class="rank-chip" aria-label="Worker rank">${rankText}</p>` : ''}
       <p class="hint">Top category: ${topCategory}</p>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
     `;
@@ -1305,10 +1307,10 @@ const buildProfileCardMarkup = (profile, options = {}) => {
 const renderPreviewCards = (targetList, type) => {
   if (!targetList) return;
   if (type === 'top') {
-    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Score (1-10): 9.6</span></div><p class="hint">Preview example worker</p></li>';
+    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Score (1-10): 9.6</span></div><p class="rank-chip" aria-label="Worker rank">Rank #1/12</p><p class="hint">Preview example worker</p></li>';
     return;
   }
-  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Score (1-10): 3.6</span></div><p class="hint">Preview example worker</p></li>';
+  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Score (1-10): 3.6</span></div><p class="rank-chip" aria-label="Worker rank">Rank #12/12</p><p class="hint">Preview example worker</p></li>';
 };
 
 const getBestPerCategoryProfiles = (profiles) => {
