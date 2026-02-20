@@ -394,6 +394,12 @@
             </fieldset>
 
             <fieldset class="history-fieldset admin-section">
+              <legend>Delete profiles</legend>
+              <p class="hint">Delete a worker profile and all related ratings/history/notes.</p>
+              <div id="admin-profile-delete-list" class="history-list"><p class="hint">No profiles available.</p></div>
+            </fieldset>
+
+            <fieldset class="history-fieldset admin-section">
               <legend>Admin access</legend>
               <p class="hint">Set a password to protect admin settings. Leave blank to keep current password.</p>
               <div class="field-grid">
@@ -409,6 +415,16 @@
             <div class="form-actions">
               <button type="submit">Save admin settings</button>
             </div>
+
+            <fieldset class="history-fieldset admin-section">
+              <legend>Review log</legend>
+              <p class="hint">Rolling console of system changes. Use undo/redo to move across recent changes.</p>
+              <div class="section-actions admin-inline-actions">
+                <button type="button" id="admin-log-undo" class="secondary">Undo</button>
+                <button type="button" id="admin-log-redo" class="secondary">Redo</button>
+              </div>
+              <div id="admin-review-log" class="history-list"><p class="hint">No changes logged yet.</p></div>
+            </fieldset>
           </form>
         </section>
 
