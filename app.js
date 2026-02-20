@@ -254,7 +254,27 @@ const computeRankScore = (profile) => {
   return { rankScore, consistencyBuff };
 };
 
-const computeJobsCount = (profile) => Array.isArray(profile?.ratings) ? profile.ratings.length : 0;
+const computeConsistentDays = (profile) => {
+  const ratings = Array.isArray(profile?.ratings) ? profile.ratings : [];
+  if (!ratings.length) return 0;
+
+  const sorted = [...ratings].sort((a, b) => new Date(b.ratedAt).getTime() - new Date(a.ratedAt).getTime());
+  const streak = [];
+
+  for (const entry of sorted) {
+    const normalized = toFivePointScale(entry.score);
+    if (normalized < 3.5) break;
+    streak.push(entry);
+  }
+
+  if (!streak.length) return 0;
+
+  const dayKeys = streak
+    .map((entry) => new Date(entry.ratedAt).toISOString().slice(0, 10))
+    .filter(Boolean);
+
+  return new Set(dayKeys).size;
+};
 
 const statusLabelFromClass = (badgeClass) => {
   if (badgeClass === 'top-performer') return 'Reliable';
@@ -1249,7 +1269,6 @@ const buildProfileCardMarkup = (profile, options = {}) => {
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
-  const rankMarkup = rankPosition ? `<span>Rank: #${rankPosition} out of ${totalWorkers}</span>` : '';
 
   if (condensed) {
     const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
@@ -1260,8 +1279,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       </div>
       <div class="meta compact-meta">
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-        <span>Jobs: ${computeJobsCount(profile)}</span>
-        ${rankMarkup}
+        <span>Consistent for: ${computeConsistentDays(profile)} day(s)</span>
       </div>
       <p class="hint">Top category: ${topCategory}</p>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
@@ -1277,8 +1295,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
       <span>Ratings: ${profile.ratings.length}</span>
       <span>Avg score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-      <span>Jobs: ${computeJobsCount(profile)}</span>
-      ${rankMarkup}
+      <span>Consistent for: ${computeConsistentDays(profile)} day(s)</span>
     </div>
     ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
     <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
@@ -1430,8 +1447,7 @@ const renderWorkerSearchResults = (profiles) => {
       <div class="meta">
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
         <span>Consistency: ${Number(profile.analytics?.consistencyScore || 0).toFixed(1)}%</span>
-        <span>Jobs: ${computeJobsCount(profile)}</span>
-        <span>Rank: #${rankPosition} out of ${sorted.length}</span>
+        <span>Consistent for: ${computeConsistentDays(profile)} day(s)</span>
       </div>
     `;
     workerSearchResults.appendChild(item);
@@ -1649,8 +1665,8 @@ const renderWorkerProfile = (profiles, workerId) => {
       </div>
       <div class="profile-score-cards">
         <article class="profile-score-card">
-          <p class="hint">Jobs (reviews)</p>
-          <strong>${computeJobsCount(profile)}</strong>
+          <p class="hint">Consistent for</p>
+          <strong>${computeConsistentDays(profile)} day(s)</strong>
         </article>
         <article class="profile-score-card">
           <p class="hint">Top job category</p>
