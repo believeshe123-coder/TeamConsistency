@@ -610,6 +610,26 @@ select:user-invalid {
   font-weight: 700;
 }
 
+
+.score-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.score-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.score-pill-muted {
+  opacity: 0.55;
+}
+
+.score-pill-active {
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.15);
+}
+
 #worker-profile-detail {
   border: 1px solid #8e96ae;
   background: #eef1f8;
