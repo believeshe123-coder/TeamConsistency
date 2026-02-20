@@ -35,17 +35,22 @@ body {
   font-size: 13px;
 }
 
-.app-version-badge {
-  position: fixed;
-  right: 10px;
-  bottom: 8px;
+/* Global version badge: fixed placement across browsers */
+#versionBadge {
+  position: fixed !important;
+  right: 12px !important;
+  bottom: 12px !important;
+  left: auto !important;
+  top: auto !important;
   padding: 2px 8px;
   border: 1px solid #7f8597;
+  border-radius: 4px;
   background: #e7eaf4;
   color: #2a3349;
   font-size: 11px;
   font-weight: 700;
   box-shadow: inset 1px 1px 0 #f8f9fc;
+  z-index: 1000;
 }
 
 .container {
