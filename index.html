@@ -139,17 +139,28 @@
                 <select id="job-type" name="jobType" required aria-describedby="job-type-error"></select>
                 <span id="job-type-error" class="field-error">Select a job type before saving.</span>
               </label>
+
+              <label>
+                <span class="label-text">Daily work outcome <span class="required-indicator" aria-hidden="true">*</span></span>
+                <select id="daily-outcome" name="dailyOutcome" required aria-describedby="daily-outcome-error">
+                  <option value="">Select outcome</option>
+                  <option value="declined">Declined work offered (4/10)</option>
+                  <option value="worked">Worked (5/10)</option>
+                  <option value="repeated">Worked and was requested back (6/10)</option>
+                </select>
+                <span id="daily-outcome-error" class="field-error">Select a daily work outcome before saving.</span>
+              </label>
             </div>
 
             <p class="score-guidance" role="note">
-              Scoring scale is capped at -5 to +5. 0 means average. Ratings are anonymous.
+              Quick-entry scores use a 1–10 scale: Declined (4), Worked (5), Worked + requested again (6).
             </p>
 
+
             <fieldset class="history-fieldset">
-              <legend>Rating checklist</legend>
-              <p class="hint">Enable each row you want to score, then pick a level from low (left) to high (right).</p>
+              <legend>Rating checklist (optional)</legend>
+              <p class="hint">Use this only when there is something specific to score. If left blank, Daily work outcome is used.</p>
               <div id="criterion-ratings" class="criteria-list"></div>
-              <p id="score-error" class="field-error">Pick at least one checklist item before saving.</p>
             </fieldset>
 
             <label>
@@ -184,16 +195,6 @@
                 <input id="profileEmployeeId" name="externalEmployeeId" type="text" placeholder="EMP-1042" />
               </label>
 
-              <label>
-                <span class="label-text">Status <span class="required-indicator" aria-hidden="true">*</span></span>
-                <select id="profileStatus" name="status" required aria-describedby="profile-status-error">
-                  <option value="">Select status</option>
-                  <option value="Full-time">Full-time</option>
-                  <option value="Part-time">Part-time</option>
-                  <option value="New">New</option>
-                </select>
-                <span id="profile-status-error" class="field-error">Choose a status to continue.</span>
-              </label>
             </div>
 
             <label>
@@ -231,12 +232,6 @@
           <p class="hint">Update scoring rules and form options used by the main ratings page. Sections below are ordered in the same flow used during ratings.</p>
 
           <form id="admin-settings-form">
-            <fieldset class="history-fieldset admin-section">
-              <legend>Status weights</legend>
-              <p class="hint">Higher values improve a profile's rank. Negative values reduce rank.</p>
-              <div id="status-weights" class="field-grid"></div>
-            </fieldset>
-
             <fieldset class="history-fieldset admin-section">
               <legend>Job types</legend>
               <p class="hint">These options appear in the "Job type" dropdown when creating ratings.</p>

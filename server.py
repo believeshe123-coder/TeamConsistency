@@ -370,12 +370,8 @@ def validate_profile_notes(notes: list[dict]) -> str | None:
 
 def validate_profile_payload(payload: dict) -> str | None:
     name = str(payload.get('name', payload.get('workerName', ''))).strip()
-    status = str(payload.get('status', '')).strip()
-
     if len(name) < 2:
         return 'name is required and must be at least 2 characters'
-    if not status:
-        return 'Missing required field: status'
 
     history_entries = payload.get('historyEntries', payload.get('history', []))
     if history_entries is None:

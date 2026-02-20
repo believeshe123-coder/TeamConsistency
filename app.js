@@ -1,6 +1,6 @@
 const API_BASE = '/api';
 const RATING_CATEGORIES = ['Punctuality', 'Skill', 'Teamwork'];
-const PROFILE_STATUSES = ['Full-time', 'Part-time', 'New'];
+const PROFILE_STATUSES = [];
 const RATING_RULES_KEY = 'worker-rating-rules-v1';
 const ADMIN_SETTINGS_KEY = 'worker-admin-settings-v1';
 const RATING_CRITERIA_KEY = 'worker-rating-criteria-v1';
@@ -236,14 +236,12 @@ const statusFromScore = (score) => {
   return 'steady';
 };
 
-const getStatusWeight = (status) => Number(adminSettings.statusWeights?.[status] || 0);
 
 const computeRankScore = (profile) => {
-  const statusWeight = getStatusWeight(profile.profileStatus);
   const consistencyScore = Number(profile.analytics?.consistencyScore || 0);
   const consistencyBuff = Number((Math.max(0, (consistencyScore - 50) / 50) * 1.5).toFixed(2));
-  const rankScore = Number((Number(profile.overallScore || 0) + statusWeight + consistencyBuff).toFixed(2));
-  return { rankScore, statusWeight, consistencyBuff };
+  const rankScore = Number((Number(profile.overallScore || 0) + consistencyBuff).toFixed(2));
+  return { rankScore, consistencyBuff };
 };
 
 const statusLabelFromClass = (badgeClass) => {
@@ -1104,7 +1102,6 @@ const matchesProfileSearch = (profile, rawTerm) => {
 
   const haystack = [
     profile.name,
-    profile.profileStatus,
     ...(profile.jobCategories || []),
     profile.backgroundInfo,
   ].map((value) => String(value || '').toLowerCase()).join(' ');
@@ -1117,7 +1114,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
-  const { rankScore, statusWeight, consistencyBuff } = computeRankScore(profile);
+  const { rankScore, consistencyBuff } = computeRankScore(profile);
 
   if (condensed) {
     const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
@@ -1142,12 +1139,10 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       <span class="badge ${badgeClass}">${badgeLabel}</span>
     </div>
     <div class="meta">
-      <span>Status: ${profile.profileStatus || '—'}</span>
       <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
       <span>Ratings: ${profile.ratings.length}</span>
       <span>Avg score (1-10): ${toTenPointScale(profile.overallScore)}</span>
       <span>Rank score: ${rankScore}</span>
-      <span>Status weight: ${statusWeight}</span>
       <span>Consistency buff: +${consistencyBuff}</span>
     </div>
     ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
@@ -1296,7 +1291,6 @@ const renderWorkerSearchResults = (profiles) => {
       </div>
       <div class="meta">
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-        <span>Status: ${profile.profileStatus || '—'}</span>
         <span>Consistency: ${Number(profile.analytics?.consistencyScore || 0).toFixed(1)}%</span>
         <span>Consistency buff: +${computeRankScore(profile).consistencyBuff}</span>
       </div>
@@ -1524,7 +1518,6 @@ const renderWorkerProfile = (profiles, workerId) => {
         </article>
       </div>
       <div class="meta">
-        <span>Status: ${profile.profileStatus || '—'}</span>
         <span>Consistency: ${Number(analytics.consistencyScore || 0).toFixed(1)}%</span>
         <span>Positive streak: ${analytics.currentPositiveStreak || 0}</span>
         <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
@@ -1976,12 +1969,10 @@ const openEditProfileForm = (profile) => {
   if (headerTitle) headerTitle.textContent = `Edit Worker Profile: ${profile.name}`;
 
   const nameField = document.getElementById('profileName');
-  const statusField = document.getElementById('profileStatus');
   const backgroundField = document.getElementById('profileBackground');
   const employeeIdField = document.getElementById('profileEmployeeId');
 
   if (nameField) nameField.value = profile.name || '';
-  if (statusField) statusField.value = profile.profileStatus || '';
   if (backgroundField) backgroundField.value = profile.backgroundInfo || '';
   if (employeeIdField) employeeIdField.value = profile.externalEmployeeId || '';
 
@@ -1991,15 +1982,8 @@ const openEditProfileForm = (profile) => {
 
 const initializeStatusOptions = () => {
   const profileStatus = document.getElementById('profileStatus');
+  if (!profileStatus) return;
   const existing = Array.from(profileStatus.options).map((option) => option.value);
-
-  PROFILE_STATUSES.forEach((status) => {
-    if (existing.includes(status)) return;
-    const option = document.createElement('option');
-    option.value = status;
-    option.textContent = status;
-    profileStatus.appendChild(option);
-  });
 };
 
 const collectHistoryEntries = () => {
@@ -2298,6 +2282,14 @@ const setupAdminSectionToggles = () => {
 
 const buildRatingPayload = (data) => {
   const noteText = data.get('note').toString().trim();
+  const dailyOutcome = data.get('dailyOutcome').toString().trim();
+  const dailyOutcomeMap = {
+    declined: { label: 'Declined work offered', score: 2 },
+    worked: { label: 'Worked', score: 2.5 },
+    repeated: { label: 'Worked and was requested back', score: 3 },
+  };
+  const outcome = dailyOutcomeMap[dailyOutcome] || null;
+
   const selectedCriteria = ratingCriteria
     .filter((criterion) => {
       const toggle = form.querySelector(`[data-criterion-toggle="${criterion.id}"]`);
@@ -2316,6 +2308,7 @@ const buildRatingPayload = (data) => {
     : null;
 
   const note = [
+    outcome ? `Daily outcome: ${outcome.label}` : '',
     selectedCriteria.length ? `Checklist: ${selectedCriteria.map((entry) => `${entry.criterion}=${entry.label} (base:${entry.score}, weight:${entry.weightedScore})`).join('; ')}` : '',
     noteText,
   ].filter(Boolean).join(' | ');
@@ -2325,7 +2318,7 @@ const buildRatingPayload = (data) => {
   return {
     workerName: data.get('workerName').toString().trim(),
     category: jobType,
-    score: checklistAverage,
+    score: Number.isFinite(checklistAverage) ? checklistAverage : (outcome?.score ?? null),
     reviewer: 'Anonymous',
     note,
     selectedCriteria,
@@ -2350,7 +2343,7 @@ form.addEventListener('submit', async (event) => {
 
   if (!Number.isFinite(rating.score)) {
     // eslint-disable-next-line no-alert
-    alert('Select at least one checklist item to create a rating.');
+    alert('Select a daily work outcome to create a rating.');
     return;
   }
 
@@ -2560,7 +2553,6 @@ if (addRatingCriterionButton) {
     addRatingCriterionPanel?.classList.add('hidden');
     saveRatingCriteria();
     renderRatingCriteriaRows();
-    renderCriterionRatings();
   });
 }
 
@@ -2598,7 +2590,6 @@ if (ratingCriteriaList) {
     ratingCriteria = ratingCriteria.filter((criterion) => criterion.id !== criterionId);
     saveRatingCriteria();
     renderRatingCriteriaRows();
-    renderCriterionRatings();
   });
 }
 
@@ -2911,7 +2902,7 @@ addProfileForm.addEventListener('submit', async (event) => {
   const data = new FormData(addProfileForm);
   const profilePayload = {
     name: data.get('name').toString().trim(),
-    status: data.get('status').toString().trim(),
+    status: data.get('status') ? data.get('status').toString().trim() : '',
     background: data.get('background').toString().trim(),
     externalEmployeeId: data.get('externalEmployeeId').toString().trim(),
     historyEntries: collectHistoryEntries(),
@@ -3149,7 +3140,6 @@ pullAdminBundleFromBackend().then((didSync) => {
   if (didSync) {
     renderAdminSettings();
     renderRules();
-    renderCriterionRatings();
   }
 }).catch(() => {
   // keep local state if shared settings cannot be loaded
