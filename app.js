@@ -266,8 +266,8 @@ const toProfileFromBackend = (worker, ratings, localProfile = {}) => recalculate
 });
 
 const fetchProfiles = async () => {
-  try {
-    if (hasWorkerApi()) {
+  if (hasWorkerApi()) {
+    try {
       const workers = await window.workerApi.getWorkers();
       const localProfiles = loadLocalProfiles();
       const localByName = new Map(localProfiles.map((profile) => [normalizeNameKey(profile.name), profile]));
@@ -278,8 +278,12 @@ const fetchProfiles = async () => {
       });
       saveLocalProfiles(profiles);
       return profiles;
+    } catch {
+      // fall through to legacy API before using local-only cache
     }
+  }
 
+  try {
     const response = await fetch(`${API_BASE}/profiles`);
     if (!response.ok) throw new Error('Unable to load profiles');
     return response.json();
@@ -289,8 +293,8 @@ const fetchProfiles = async () => {
 };
 
 const saveRating = async (rating) => {
-  try {
-    if (hasWorkerApi()) {
+  if (hasWorkerApi()) {
+    try {
       let worker = profilesCache.find((entry) => normalizeNameKey(entry.name) === normalizeNameKey(rating.workerName));
       if (!worker) {
         const created = await window.workerApi.createWorker(rating.workerName);
@@ -307,8 +311,12 @@ const saveRating = async (rating) => {
       });
 
       return { id: worker.id, name: worker.name || rating.workerName };
+    } catch {
+      // fall through to legacy API before using local-only cache
     }
+  }
 
+  try {
     const response = await fetch(`${API_BASE}/profiles`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -488,17 +496,27 @@ const findLikelyDuplicates = (name, employeeId = '', excludeId = null) => {
 };
 
 const addProfile = async (profile) => {
-  try {
-    if (hasWorkerApi()) {
+  if (hasWorkerApi()) {
+    try {
       const createdWorker = await window.workerApi.createWorker(profile.name);
       const localProfile = upsertLocalProfile(profile);
+      const profiles = loadLocalProfiles();
+      const localIndex = profiles.findIndex((entry) => normalizeNameKey(entry.name) === normalizeNameKey(createdWorker.name));
+      if (localIndex >= 0) {
+        profiles[localIndex] = { ...profiles[localIndex], id: createdWorker.id, name: createdWorker.name };
+        saveLocalProfiles(profiles);
+      }
       return {
         ...localProfile,
         id: createdWorker.id,
         name: createdWorker.name,
       };
+    } catch {
+      // fall through to legacy API before using local-only cache
     }
+  }
 
+  try {
     const response = await fetch(`${API_BASE}/profiles/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1017,7 +1035,7 @@ const renderProfileNotesTimeline = (profileId, profileNotes) => {
   }
 
   const rows = profileNotes
-    .map((entry) => `<li class="entry-row"><span><strong>${formatTimestamp(entry.createdAt)}:</strong> ${entry.note}</span><button type="button" class="secondary" data-delete-note-id="${entry.id}" data-profile-id="${profileId}">Remove</button></li>`)
+    .map((entry) => `<li class="entry-row"><span><strong>${formatTimestamp(entry.createdAt)}:</strong> ${entry.note}</span></li>`)
     .join('');
 
   return `<ul class="history-summary">${rows}</ul>`;
@@ -1044,7 +1062,7 @@ const renderExactRatings = (profileId, ratings) => {
     return '<p class="hint">No ratings saved yet.</p>';
   }
 
-  const showRemoveActions = adminAccessUnlocked;
+  const showRemoveActions = false;
 
   const rows = [...ratings]
     .sort((a, b) => new Date(b.ratedAt).getTime() - new Date(a.ratedAt).getTime())
@@ -1119,7 +1137,7 @@ const renderProfiles = (profiles) => {
         <summary><strong>Full job rating details</strong></summary>
         ${renderExactRatings(profile.id, profile.ratings)}
       </details>
-      <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button><button type="button" class="secondary" data-delete-profile-id="${profile.id}">Delete</button></div>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
     `;
     profilesList.appendChild(item);
   });
@@ -2659,7 +2677,6 @@ if (profilesList) {
     if (profileIdToEdit) {
       const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToEdit));
       if (!profile) return;
-      if (!canAccessAdmin()) return;
       openEditProfileForm(profile);
       return;
     }
@@ -2669,19 +2686,7 @@ if (profilesList) {
 
     const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToDelete));
     if (!profile) return;
-    if (!canAccessAdmin()) return;
-    if (!confirmAction(`Do you really want to remove profile "${profile.name}"? This removes all ratings and notes for this worker.`)) return;
-
-    try {
-      await deleteProfile(profileIdToDelete);
-      if (String(workerSelector.value) === String(profileIdToDelete)) {
-        workerSelector.value = '';
-      }
-      await refreshFromBackend();
-    } catch (error) {
-      // eslint-disable-next-line no-alert
-      alert(error.message || 'Unable to delete profile');
-    }
+    alert(`Deleting profiles is admin-only. "${profile.name}" can be edited from the front end but not deleted here.`);
   });
 }
 
@@ -2695,40 +2700,20 @@ if (workerProfileDetail) {
 
     const ratingId = target.getAttribute('data-delete-rating-id');
     if (ratingId) {
-      if (!canAccessAdmin()) return;
-      if (!confirmAction('Do you really want to remove this rating?')) return;
-      try {
-        await deleteProfileRating(profileId, ratingId);
-        await refreshFromBackend();
-        workerSelector.value = String(profileId);
-        renderWorkerProfile(profilesCache, profileId);
-      } catch (error) {
-        // eslint-disable-next-line no-alert
-        alert(error.message || 'Unable to delete rating');
-      }
+      alert('Deleting ratings is admin-only and unavailable on the front end.');
       return;
     }
 
     const noteId = target.getAttribute('data-delete-note-id');
     if (noteId) {
-      if (!confirmAction('Do you really want to remove this note?')) return;
-      try {
-        await deleteProfileNote(profileId, noteId);
-        await refreshFromBackend();
-        workerSelector.value = String(profileId);
-        renderWorkerProfile(profilesCache, profileId);
-      } catch (error) {
-        // eslint-disable-next-line no-alert
-        alert(error.message || 'Unable to delete note');
-      }
+      alert('Deleting notes is admin-only and unavailable on the front end.');
     }
   });
 }
 
 addProfileButton.addEventListener('click', () => {
-  if (!canAccessAdmin()) return;
   resetProfileForm();
-  showProfilePage(true, { requireAdminAccess: true });
+  showProfilePage(true);
 });
 
 addHistoryEntryButton.addEventListener('click', () => {
@@ -2746,8 +2731,6 @@ cancelAddProfileButton.addEventListener('click', () => {
 
 addProfileForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-
-  if (!canAccessAdmin()) return;
 
   const data = new FormData(addProfileForm);
   const profilePayload = {
