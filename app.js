@@ -28,8 +28,10 @@ const rulesForm = document.getElementById('rating-rules-form');
 const rulesList = document.getElementById('rating-rules-list');
 const ruleSelect = document.getElementById('rating-rule-select');
 const mainPage = document.getElementById('main-page');
+const ratingsPage = document.getElementById('ratings-page');
 const profilePage = document.getElementById('profile-page');
 const adminPage = document.getElementById('admin-page');
+const tabProfiles = document.getElementById('tab-profiles');
 const tabRatings = document.getElementById('tab-ratings');
 const tabAdmin = document.getElementById('tab-admin');
 const adminSettingsForm = document.getElementById('admin-settings-form');
@@ -68,6 +70,7 @@ const refreshMaintenanceReportButton = document.getElementById('refresh-maintena
 const maintenanceReport = document.getElementById('maintenance-report');
 const downloadBrowserBackupButton = document.getElementById('download-browser-backup');
 const restoreBrowserBackupInput = document.getElementById('restore-browser-backup');
+const profileSearchInput = document.getElementById('profile-search');
 
 let profilesCache = [];
 let ratingRules = [];
@@ -231,8 +234,52 @@ const statusLabelFromClass = (badgeClass) => {
   return 'Unrated';
 };
 
+
+const hasWorkerApi = () => Boolean(window.workerApi);
+
+const flagsFromNote = (note) => {
+  const normalized = String(note || '').toLowerCase();
+  return {
+    late: normalized.includes('late'),
+    ncns: normalized.includes('ncns') || normalized.includes('no call no show') || normalized.includes('no call'),
+  };
+};
+
+const toProfileFromBackend = (worker, ratings, localProfile = {}) => recalculateProfileFields({
+  id: worker.id,
+  name: worker.name,
+  profileStatus: localProfile.profileStatus || '',
+  backgroundInfo: localProfile.backgroundInfo || '',
+  externalEmployeeId: localProfile.externalEmployeeId || '',
+  ratings: ratings.map((entry) => ({
+    id: entry.id,
+    category: entry.jobCategory,
+    score: Number(entry.overallScore),
+    reviewer: 'Anonymous',
+    note: entry.notes || '',
+    ratedAt: entry.date || entry.createdAt,
+  })),
+  historyEntries: localProfile.historyEntries || [],
+  profileNotes: localProfile.profileNotes || [],
+  createdAt: localProfile.createdAt || worker.createdAt || nowIso(),
+  updatedAt: nowIso(),
+});
+
 const fetchProfiles = async () => {
   try {
+    if (hasWorkerApi()) {
+      const workers = await window.workerApi.getWorkers();
+      const localProfiles = loadLocalProfiles();
+      const localByName = new Map(localProfiles.map((profile) => [normalizeNameKey(profile.name), profile]));
+      const ratingsList = await Promise.all(workers.map((worker) => window.workerApi.getWorkerRatings(worker.id)));
+      const profiles = workers.map((worker, index) => {
+        const localProfile = localByName.get(normalizeNameKey(worker.name));
+        return toProfileFromBackend(worker, ratingsList[index] || [], localProfile || {});
+      });
+      saveLocalProfiles(profiles);
+      return profiles;
+    }
+
     const response = await fetch(`${API_BASE}/profiles`);
     if (!response.ok) throw new Error('Unable to load profiles');
     return response.json();
@@ -243,6 +290,25 @@ const fetchProfiles = async () => {
 
 const saveRating = async (rating) => {
   try {
+    if (hasWorkerApi()) {
+      let worker = profilesCache.find((entry) => normalizeNameKey(entry.name) === normalizeNameKey(rating.workerName));
+      if (!worker) {
+        const created = await window.workerApi.createWorker(rating.workerName);
+        worker = { id: created.id, name: created.name };
+      }
+
+      await window.workerApi.createRating({
+        workerId: Number(worker.id),
+        date: rating.ratedAt || nowIso(),
+        jobCategory: rating.category,
+        overallScore: Number(rating.score),
+        flags: flagsFromNote(rating.note),
+        notes: rating.note || '',
+      });
+
+      return { id: worker.id, name: worker.name || rating.workerName };
+    }
+
     const response = await fetch(`${API_BASE}/profiles`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -423,6 +489,16 @@ const findLikelyDuplicates = (name, employeeId = '', excludeId = null) => {
 
 const addProfile = async (profile) => {
   try {
+    if (hasWorkerApi()) {
+      const createdWorker = await window.workerApi.createWorker(profile.name);
+      const localProfile = upsertLocalProfile(profile);
+      return {
+        ...localProfile,
+        id: createdWorker.id,
+        name: createdWorker.name,
+      };
+    }
+
     const response = await fetch(`${API_BASE}/profiles/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -439,6 +515,7 @@ const addProfile = async (profile) => {
     return upsertLocalProfile(profile);
   }
 };
+
 
 const clearProfiles = async () => {
   try {
@@ -837,6 +914,57 @@ const summarizeJobTypeScores = (ratings) => {
     }))
     .sort((a, b) => b.average - a.average || b.reviews - a.reviews || a.jobType.localeCompare(b.jobType));
 };
+
+
+const computeFrequencyWeightedIndicators = (ratings) => {
+  if (!ratings.length) {
+    return {
+      weightedAverage: 0,
+      repeatedIssueImpact: 0,
+      repeatedIssueLabel: 'No repeated issues yet',
+    };
+  }
+
+  const categoryFrequency = ratings.reduce((acc, entry) => {
+    const key = String(entry.category || '').trim().toLowerCase();
+    if (!key) return acc;
+    acc[key] = Number(acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  let totalWeight = 0;
+  let weightedSum = 0;
+  const issueFrequency = {};
+
+  ratings.forEach((entry) => {
+    const categoryKey = String(entry.category || '').trim().toLowerCase();
+    const categoryWeight = Number(categoryFrequency[categoryKey] || 1);
+    const score = Number(entry.score || 0);
+    weightedSum += score * categoryWeight;
+    totalWeight += categoryWeight;
+
+    if (score < 0) {
+      issueFrequency[categoryKey] = Number(issueFrequency[categoryKey] || 0) + 1;
+    }
+  });
+
+  const repeatedIssues = Object.entries(issueFrequency)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1]);
+
+  const repeatedIssueLabel = repeatedIssues.length
+    ? `${repeatedIssues[0][0]} (${repeatedIssues[0][1]} repeats)`
+    : 'No repeated issues yet';
+
+  const repeatedIssueImpact = repeatedIssues.reduce((sum, [, count]) => sum + (count * count), 0);
+
+  return {
+    weightedAverage: Number((weightedSum / Math.max(totalWeight, 1)).toFixed(2)),
+    repeatedIssueImpact: Number(repeatedIssueImpact.toFixed(2)),
+    repeatedIssueLabel,
+  };
+};
+
 const deriveStrengthTags = (ratings) => {
   const ranked = summarizeJobTypeScores(ratings).slice(0, 3);
   if (ratings.length < 2 || !ranked.length) return ['Not enough history yet.'];
@@ -933,12 +1061,32 @@ const renderExactRatings = (profileId, ratings) => {
   return `<ul class="history-summary">${rows}</ul>`;
 };
 
+const matchesProfileSearch = (profile, rawTerm) => {
+  const term = String(rawTerm || '').trim().toLowerCase();
+  if (!term) return true;
+
+  const haystack = [
+    profile.name,
+    profile.profileStatus,
+    ...(profile.jobCategories || []),
+    profile.backgroundInfo,
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+
+  return haystack.includes(term);
+};
+
 const renderProfiles = (profiles) => {
   profilesList.innerHTML = '';
 
-  const sorted = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
+  const searchTerm = profileSearchInput?.value || '';
+  const sorted = [...profiles]
+    .filter((profile) => matchesProfileSearch(profile, searchTerm))
+    .sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
   if (sorted.length === 0) {
-    profilesList.innerHTML = '<li class="profile-item">No workers yet. Add a profile or rating to start building profiles.</li>';
+    const emptyMessage = searchTerm
+      ? 'No workers match this search yet.'
+      : 'No workers yet. Add a profile or rating to start building profiles.';
+    profilesList.innerHTML = `<li class="profile-item">${emptyMessage}</li>`;
     return;
   }
 
@@ -1150,9 +1298,10 @@ const renderWorkerProfile = (profiles, workerId) => {
   const overallScore = Number(profile.overallScore || 0).toFixed(2);
   const analytics = profile.analytics || computeProfileAnalytics(ratings);
   const checklistSignals = computeChecklistSignals(ratings);
+  const weightedIndicators = computeFrequencyWeightedIndicators(ratings);
 
   const topJobTypeText = topJobTypes.length
-    ? topJobTypes.map((entry) => `${entry.jobType} (${entry.average})`).join(' · ')
+    ? `${topJobTypes[0].jobType} (${topJobTypes[0].reviews} reviews, avg ${topJobTypes[0].average})`
     : 'No job types rated yet';
 
   const scoreRows = jobTypeSummary.length
@@ -1178,16 +1327,20 @@ const renderWorkerProfile = (profiles, workerId) => {
       <h3>${profile.name}</h3>
       <div class="profile-score-cards">
         <article class="profile-score-card">
-          <p class="hint">Overall rating (0-5)</p>
+          <p class="hint">Average rating (0-5)</p>
           <strong>${overallScore}</strong>
         </article>
         <article class="profile-score-card">
-          <p class="hint">Jobs done (reviews)</p>
-          <strong>${totalReviews}</strong>
+          <p class="hint">Top job category</p>
+          <strong>${topJobTypeText}</strong>
         </article>
         <article class="profile-score-card">
-          <p class="hint">Top job types</p>
-          <strong>${topJobTypeText}</strong>
+          <p class="hint">Weighted performance</p>
+          <strong>${weightedIndicators.weightedAverage}</strong>
+        </article>
+        <article class="profile-score-card">
+          <p class="hint">Repeated issue impact</p>
+          <strong>${weightedIndicators.repeatedIssueImpact}</strong>
         </article>
       </div>
       <div class="meta">
@@ -1203,6 +1356,7 @@ const renderWorkerProfile = (profiles, workerId) => {
     ? checklistSignals.tags.map((tag) => `<span class="badge custom-tag-preview" style="background:${tag.color}; color:#1f2330;">${tag.label}</span>`).join(' ')
     : '<span class="hint">No issue tags triggered yet.</span>'}
       </div>
+      <p class="hint">Frequency-weighted issue trend: ${weightedIndicators.repeatedIssueLabel}</p>
       ${checklistSignals.insights.length
     ? `<p class="hint">Insights: ${checklistSignals.insights.join(' • ')}</p>`
     : ''}
@@ -1858,25 +2012,46 @@ const lockAdminAccess = () => {
   setAdminFeedback('Admin area locked.');
 };
 
+const setTopTabState = (view) => {
+  const isProfiles = view === 'profiles';
+  const isRatings = view === 'ratings';
+  const isAdmin = view === 'admin';
+
+  tabProfiles?.classList.toggle('active', isProfiles);
+  tabRatings?.classList.toggle('active', isRatings);
+  tabAdmin?.classList.toggle('active', isAdmin);
+
+  tabProfiles?.setAttribute('aria-selected', String(isProfiles));
+  tabRatings?.setAttribute('aria-selected', String(isRatings));
+  tabAdmin?.setAttribute('aria-selected', String(isAdmin));
+};
+
+const showMainView = (view) => {
+  mainPage.classList.toggle('hidden', view !== 'profiles');
+  ratingsPage?.classList.toggle('hidden', view !== 'ratings');
+  profilePage.classList.add('hidden');
+  adminPage.classList.add('hidden');
+  setTopTabState(view);
+};
+
 const showProfilePage = (show, options = {}) => {
   const { requireAdminAccess = false } = options;
   if (show && requireAdminAccess && !canAccessAdmin()) {
     return;
   }
-  mainPage.classList.toggle('hidden', show);
+
+  mainPage.classList.add('hidden');
+  ratingsPage?.classList.add('hidden');
   profilePage.classList.toggle('hidden', !show);
   adminPage.classList.add('hidden');
-
-  tabRatings.classList.add('active');
-  tabAdmin.classList.remove('active');
-  tabRatings.setAttribute('aria-selected', 'true');
-  tabAdmin.setAttribute('aria-selected', 'false');
+  setTopTabState('profiles');
 
   if (show) {
     history.pushState({ profilePage: true }, '', '#add-profile');
     document.getElementById('profileName').focus();
   } else if (window.location.hash === '#add-profile') {
-    history.pushState({}, '', '#');
+    history.pushState({}, '', '#profiles');
+    showMainView('profiles');
   }
 };
 
@@ -1887,24 +2062,20 @@ const showAdminPage = (show) => {
 
   if (!show) {
     setAdminUnlocked(false);
+    showMainView('profiles');
+    if (window.location.hash === '#admin-settings') {
+      history.pushState({}, '', '#profiles');
+    }
+    return;
   }
 
-  mainPage.classList.toggle('hidden', show);
+  mainPage.classList.add('hidden');
+  ratingsPage?.classList.add('hidden');
   profilePage.classList.add('hidden');
-  adminPage.classList.toggle('hidden', !show);
-
-  tabRatings.classList.toggle('active', !show);
-  tabAdmin.classList.toggle('active', show);
-  tabRatings.setAttribute('aria-selected', String(!show));
-  tabAdmin.setAttribute('aria-selected', String(show));
-
-  if (show) {
-    history.pushState({ adminPage: true }, '', '#admin-settings');
-  } else if (window.location.hash === '#admin-settings') {
-    history.pushState({}, '', '#');
-  }
+  adminPage.classList.remove('hidden');
+  setTopTabState('admin');
+  history.pushState({ adminPage: true }, '', '#admin-settings');
 };
-
 
 
 const ensurePanelOpen = (panel, focusField) => {
@@ -2018,10 +2189,25 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+if (tabProfiles) {
+  tabProfiles.addEventListener('click', () => {
+    if (window.location.hash === '#add-profile') {
+      showProfilePage(false);
+      return;
+    }
+    if (window.location.hash === '#admin-settings') {
+      history.pushState({}, '', '#profiles');
+    }
+    showMainView('profiles');
+  });
+}
+
 if (tabRatings) {
   tabRatings.addEventListener('click', () => {
-    showAdminPage(false);
-    showProfilePage(false);
+    if (window.location.hash === '#admin-settings') {
+      history.pushState({}, '', '#ratings');
+    }
+    showMainView('ratings');
   });
 }
 
@@ -2639,6 +2825,13 @@ if (refreshProfilesButton) {
   });
 }
 
+
+if (profileSearchInput) {
+  profileSearchInput.addEventListener('input', () => {
+    renderProfiles(profilesCache);
+  });
+}
+
 clearButton.addEventListener('click', async () => {
   if (!canAccessAdmin()) return;
   if (!confirmAction('Do you really want to clear?')) return;
@@ -2746,9 +2939,16 @@ window.addEventListener('popstate', () => {
     showAdminPage(true);
     return;
   }
+  if (hash === '#add-profile') {
+    showProfilePage(true, { requireAdminAccess: true });
+    return;
+  }
+  if (hash === '#ratings') {
+    showMainView('ratings');
+    return;
+  }
 
-  showAdminPage(false);
-  showProfilePage(hash === '#add-profile', { requireAdminAccess: hash === '#add-profile' });
+  showMainView('profiles');
 });
 
 if (!localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY)) {
@@ -2776,9 +2976,12 @@ pullAdminBundleFromBackend().then((didSync) => {
 });
 if (window.location.hash === '#admin-settings') {
   showAdminPage(true);
+} else if (window.location.hash === '#add-profile') {
+  showProfilePage(true, { requireAdminAccess: true });
+} else if (window.location.hash === '#ratings') {
+  showMainView('ratings');
 } else {
-  showAdminPage(false);
-  showProfilePage(window.location.hash === '#add-profile', { requireAdminAccess: window.location.hash === '#add-profile' });
+  showMainView('profiles');
 }
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;

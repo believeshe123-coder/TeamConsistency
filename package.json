@@ -1,0 +1,14 @@
+{
+  "name": "team-consistency",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "backend": "node server/index.js",
+    "frontend": "python3 -m http.server 5173"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "sqlite3": "^5.1.7"
+  }
+}

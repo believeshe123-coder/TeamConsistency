@@ -9,14 +9,70 @@
   <body>
     <main class="container">
       <div class="page-tabs" role="tablist" aria-label="Main pages">
-        <button type="button" id="tab-ratings" class="tab active" role="tab" aria-selected="true">Ratings</button>
+        <button type="button" id="tab-profiles" class="tab active" role="tab" aria-selected="true">Profiles</button>
+        <button type="button" id="tab-ratings" class="tab" role="tab" aria-selected="false">Ratings</button>
         <button type="button" id="tab-admin" class="tab secondary stealth-admin-tab" role="tab" aria-selected="false" aria-label="Open admin settings" title="Admin">⚙</button>
       </div>
 
       <section id="main-page">
         <header>
           <h1>Worker Ratings Dashboard</h1>
-          <p>Use this page to log ratings quickly, then review profile history and trends in one place.</p>
+          <p>Find and review worker profiles first, then drill into rating history, trends, and issue patterns.</p>
+        </header>
+
+        <section class="card">
+          <div class="section-header">
+            <h2>Worker Directory</h2>
+            <div class="section-actions">
+              <button type="button" id="add-profile" class="secondary">Add Profile</button>
+              <button type="button" id="refresh-profiles" class="secondary">Refresh</button>
+            </div>
+          </div>
+          <label>
+            <span class="label-text">Search workers</span>
+            <input id="profile-search" type="search" placeholder="Search by name, status, or category" />
+          </label>
+          <p class="hint">Browse profiles here first. Use ratings tab only when adding a new review.</p>
+          <ul id="profiles" class="profiles"></ul>
+        </section>
+
+        <div class="right-column-stack">
+          <section class="card">
+            <h2>Profile Details & Trends</h2>
+            <label>
+              <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
+              <select id="worker-selector" aria-label="Select worker profile"></select>
+            </label>
+            <p class="hint">Quick add worker: type a name below to add them to the system (name only).</p>
+            <div class="quick-worker-add">
+              <input id="quick-worker-name" type="text" placeholder="Add worker by name" minlength="2" />
+              <button type="button" id="quick-add-worker" class="secondary">Add worker</button>
+            </div>
+            <p id="quick-worker-feedback" class="hint" aria-live="polite"></p>
+            <div id="worker-profile-detail" class="profile-detail">
+              <p class="hint">Choose a worker to inspect weighted trends and rating history.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="section-header">
+              <h2>Data & Backup</h2>
+              <div class="section-actions">
+                <button type="button" id="download-browser-backup" class="secondary">Download browser backup</button>
+                <label for="restore-browser-backup" class="button-like secondary">Restore backup</label>
+                <input id="restore-browser-backup" type="file" accept="application/json" class="hidden-file-input" />
+                <button type="button" id="clear-data" class="secondary">Clear all</button>
+              </div>
+            </div>
+            <p id="data-sync-status" class="hint" aria-live="polite">Data sync: waiting for first refresh…</p>
+          </section>
+        </div>
+      </section>
+
+      <section id="ratings-page" class="hidden" aria-label="Ratings entry page">
+        <header>
+          <h1>Add Worker Rating</h1>
+          <p>Keep using the same rating workflow; this view only separates it from profile browsing.</p>
         </header>
 
         <section class="card">
@@ -40,7 +96,6 @@
                 <select id="job-type" name="jobType" required aria-describedby="job-type-error"></select>
                 <span id="job-type-error" class="field-error">Select a job type before saving.</span>
               </label>
-
             </div>
 
             <p class="score-guidance" role="note">
@@ -64,25 +119,6 @@
             </div>
           </form>
         </section>
-
-        <div class="right-column-stack">
-          <section class="card">
-            <h2>2) Review a Worker Profile</h2>
-            <label>
-              <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
-              <select id="worker-selector" aria-label="Select worker profile"></select>
-            </label>
-            <p class="hint">Quick add worker: type a name below to add them to the system (name only).</p>
-            <div class="quick-worker-add">
-              <input id="quick-worker-name" type="text" placeholder="Add worker by name" minlength="2" />
-              <button type="button" id="quick-add-worker" class="secondary">Add worker</button>
-            </div>
-            <p id="quick-worker-feedback" class="hint" aria-live="polite"></p>
-            <div id="worker-profile-detail" class="profile-detail">
-              <p class="hint">Choose a worker to inspect category-level history, note timeline, and score trend.</p>
-            </div>
-          </section>
-        </div>
       </section>
 
       <section id="profile-page" class="hidden" aria-label="Add worker profile page">
@@ -338,26 +374,10 @@
           </form>
         </section>
 
-        <section class="card">
-            <div class="section-header">
-              <h2>Manage Profiles</h2>
-              <div class="section-actions">
-                <button type="button" id="add-profile" class="secondary">Add Profile</button>
-                <button type="button" id="refresh-profiles" class="secondary">Refresh</button>
-                <button type="button" id="download-browser-backup" class="secondary">Download browser backup</button>
-                <label for="restore-browser-backup" class="button-like secondary">Restore backup</label>
-                <input id="restore-browser-backup" type="file" accept="application/json" class="hidden-file-input" />
-                <button type="button" id="clear-data" class="secondary">Clear all</button>
-              </div>
-            </div>
-          <p class="hint">Profiles are persisted in a SQLite backend for long-term analysis.</p>
-          <p class="hint">Performance badges always include text labels: Top performer, Steady, or At risk.</p>
-          <p id="data-sync-status" class="hint" aria-live="polite">Data sync: waiting for first refresh…</p>
-          <ul id="profiles" class="profiles"></ul>
-        </section>
       </section>
     </main>
 
+    <script src="api.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

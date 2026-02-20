@@ -59,6 +59,7 @@ h2 {
 }
 
 #main-page,
+#ratings-page,
 #profile-page,
 #admin-page {
   display: grid;
@@ -72,13 +73,15 @@ h2 {
 }
 
 #profile-page.hidden,
+#ratings-page.hidden,
 #admin-page.hidden,
 #main-page.hidden,
 .hidden {
   display: none !important;
 }
 
-#main-page > header {
+#main-page > header,
+#ratings-page > header {
   grid-column: 1 / -1;
   margin: 0;
   padding: 10px 12px;
@@ -86,12 +89,14 @@ h2 {
   background: #ced2df;
 }
 
-#main-page > .card {
+#main-page > .card,
+#ratings-page > .card {
   grid-column: 1;
   grid-row: 2;
 }
 
-#main-page .right-column-stack {
+#main-page .right-column-stack,
+#ratings-page .right-column-stack {
   grid-column: 2;
   grid-row: 2;
   display: grid;
@@ -110,15 +115,18 @@ h2 {
   gap: var(--space-3);
 }
 
-#main-page > .card {
+#main-page > .card,
+#ratings-page > .card {
   border-right: 1px solid #98a0b8;
 }
 
-#main-page .right-column-stack .card {
+#main-page .right-column-stack .card,
+#ratings-page .right-column-stack .card {
   border-left: 0;
 }
 
-#main-page .right-column-stack .card + .card {
+#main-page .right-column-stack .card + .card,
+#ratings-page .right-column-stack .card + .card {
   border-top: 0;
 }
 
@@ -221,7 +229,7 @@ button.secondary {
 
 .page-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
   gap: 8px;
   margin: 0;
   padding: 6px;
@@ -234,6 +242,11 @@ button.secondary {
   border: 1px solid #626c84;
   box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.7);
   font-weight: 700;
+}
+
+.page-tabs #tab-profiles {
+  background: #5f8df5;
+  color: #001630;
 }
 
 .page-tabs #tab-ratings {
@@ -623,22 +636,26 @@ select:user-invalid {
     grid-template-columns: 1fr;
   }
 
-  #main-page > .card {
+  #main-page > .card,
+#ratings-page > .card {
     border-right: 1px solid var(--border);
     grid-column: auto;
     grid-row: auto;
   }
 
-  #main-page .right-column-stack {
+  #main-page .right-column-stack,
+#ratings-page .right-column-stack {
     grid-column: auto;
     grid-row: auto;
   }
 
-  #main-page .right-column-stack .card {
+  #main-page .right-column-stack .card,
+#ratings-page .right-column-stack .card {
     border-left: 1px solid var(--border);
   }
 
-  #main-page .right-column-stack .card + .card {
+  #main-page .right-column-stack .card + .card,
+#ratings-page .right-column-stack .card + .card {
     border-top: 1px solid var(--border);
   }
 }
