@@ -1265,7 +1265,7 @@ const matchesProfileSearch = (profile, rawTerm) => {
 };
 
 const buildProfileCardMarkup = (profile, options = {}) => {
-  const { condensed = false } = options;
+  const { condensed = false, rankPosition = null, totalWorkers = null } = options;
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
@@ -1380,13 +1380,14 @@ const renderProfiles = (profiles) => {
   }
 
   const topPerformers = sorted.slice(0, 3);
-  const badWorkers = [...sorted].reverse().slice(0, 5);
+  const badWorkers = [...sorted].reverse().slice(0, 3);
 
   if (topPerformersList) {
     topPerformers.forEach((profile) => {
       const item = document.createElement('li');
       item.className = 'profile-item top-performer-card';
-      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true });
+      const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sorted.length });
       topPerformersList.appendChild(item);
     });
   }
@@ -1394,7 +1395,8 @@ const renderProfiles = (profiles) => {
   badWorkers.forEach((profile) => {
     const item = document.createElement('li');
     item.className = 'profile-item at-risk-preview';
-    item.innerHTML = buildProfileCardMarkup(profile, { condensed: true });
+    const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+    item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sorted.length });
     profilesList.appendChild(item);
   });
 };
@@ -1434,6 +1436,7 @@ const renderWorkerSearchResults = (profiles) => {
   }
 
   filtered.forEach((profile) => {
+    const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
     const item = document.createElement('li');
     item.className = 'profile-item';
     item.innerHTML = `
