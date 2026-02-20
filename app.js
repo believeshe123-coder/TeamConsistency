@@ -8,6 +8,8 @@ const SCORE_CHOICES = [-5, -2.5, 0, 2.5, 5];
 const ADMIN_ACCESS_PASSWORD_KEY = 'worker-admin-access-password-v1';
 const DEFAULT_ADMIN_ACCESS_PASSWORD = '1234';
 const RECENT_TAG_COLORS_KEY = 'worker-recent-tag-colors-v1';
+const CHANGE_LOG_KEY = 'worker-change-log-v1';
+const CHANGE_LOG_LIMIT = 80;
 
 const form = document.getElementById('rating-form');
 const addProfileForm = document.getElementById('add-profile-form');
@@ -69,6 +71,10 @@ const quickWorkerNameInput = document.getElementById('quick-worker-name');
 const quickWorkerFeedback = document.getElementById('quick-worker-feedback');
 const refreshMaintenanceReportButton = document.getElementById('refresh-maintenance-report');
 const maintenanceReport = document.getElementById('maintenance-report');
+const adminReviewLog = document.getElementById('admin-review-log');
+const adminProfileDeleteList = document.getElementById('admin-profile-delete-list');
+const adminLogUndoButton = document.getElementById('admin-log-undo');
+const adminLogRedoButton = document.getElementById('admin-log-redo');
 const downloadBrowserBackupButton = document.getElementById('download-browser-backup');
 const restoreBrowserBackupInput = document.getElementById('restore-browser-backup');
 const profileSearchInput = document.getElementById('profile-search');
@@ -89,6 +95,10 @@ let editingJobTypeName = null;
 let editingCriterionId = null;
 let editingCustomTagId = null;
 let editingChecklistMathRuleId = null;
+let changeLogEntries = [];
+let changeLogCursor = -1;
+let isApplyingChangeLogState = false;
+
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
@@ -243,6 +253,8 @@ const computeRankScore = (profile) => {
   const rankScore = Number((Number(profile.overallScore || 0) + consistencyBuff).toFixed(2));
   return { rankScore, consistencyBuff };
 };
+
+const computeJobsCount = (profile) => Array.isArray(profile?.ratings) ? profile.ratings.length : 0;
 
 const statusLabelFromClass = (badgeClass) => {
   if (badgeClass === 'top-performer') return 'Reliable';
@@ -729,6 +741,122 @@ const cleanFrontEndDisplayText = (text) => String(text || '')
   .replace(/\s{2,}/g, ' ')
   .trim();
 
+
+const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+const captureStateSnapshot = () => ({
+  profiles: deepClone(profilesCache || []),
+  adminSettings: deepClone(adminSettings || {}),
+  ratingCriteria: deepClone(ratingCriteria || []),
+  ratingRules: deepClone(ratingRules || []),
+});
+
+const snapshotsEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+const saveChangeLog = () => {
+  localStorage.setItem(CHANGE_LOG_KEY, JSON.stringify({ entries: changeLogEntries, cursor: changeLogCursor }));
+};
+
+const loadChangeLog = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CHANGE_LOG_KEY) || '{}');
+    changeLogEntries = Array.isArray(parsed.entries) ? parsed.entries : [];
+    changeLogCursor = Number.isInteger(parsed.cursor) ? parsed.cursor : (changeLogEntries.length - 1);
+    changeLogCursor = Math.max(-1, Math.min(changeLogCursor, changeLogEntries.length - 1));
+  } catch {
+    changeLogEntries = [];
+    changeLogCursor = -1;
+  }
+};
+
+const updateChangeLogButtons = () => {
+  if (adminLogUndoButton) adminLogUndoButton.disabled = changeLogCursor < 0;
+  if (adminLogRedoButton) adminLogRedoButton.disabled = changeLogCursor >= changeLogEntries.length - 1;
+};
+
+const recordStateChange = (label, beforeSnapshot, afterSnapshot) => {
+  if (isApplyingChangeLogState) return;
+  if (!beforeSnapshot || !afterSnapshot || snapshotsEqual(beforeSnapshot, afterSnapshot)) return;
+
+  if (changeLogCursor < changeLogEntries.length - 1) {
+    changeLogEntries = changeLogEntries.slice(0, changeLogCursor + 1);
+  }
+
+  const nextEntry = {
+    id: crypto.randomUUID(),
+    label,
+    createdAt: nowIso(),
+    before: beforeSnapshot,
+    after: afterSnapshot,
+  };
+
+  changeLogEntries.push(nextEntry);
+  if (changeLogEntries.length > CHANGE_LOG_LIMIT) {
+    changeLogEntries = changeLogEntries.slice(changeLogEntries.length - CHANGE_LOG_LIMIT);
+  }
+  changeLogCursor = changeLogEntries.length - 1;
+  saveChangeLog();
+};
+
+const applyStateSnapshot = async (snapshot) => {
+  if (!snapshot || typeof snapshot !== 'object') return;
+
+  isApplyingChangeLogState = true;
+  try {
+    profilesCache = Array.isArray(snapshot.profiles) ? deepClone(snapshot.profiles) : [];
+    adminSettings = {
+      ...adminSettings,
+      ...(snapshot.adminSettings || {}),
+      checklistMathRules: normalizeChecklistMathRules(snapshot?.adminSettings?.checklistMathRules),
+      customTags: normalizeCustomTags(snapshot?.adminSettings?.customTags),
+    };
+    ratingCriteria = Array.isArray(snapshot.ratingCriteria) ? deepClone(snapshot.ratingCriteria) : [];
+    ratingRules = Array.isArray(snapshot.ratingRules) ? deepClone(snapshot.ratingRules) : [];
+
+    saveLocalProfiles(profilesCache);
+    localStorage.setItem(RATING_RULES_KEY, JSON.stringify(ratingRules));
+    localStorage.setItem(RATING_CRITERIA_KEY, JSON.stringify(ratingCriteria));
+    saveAdminSettings();
+
+    renderRules();
+    renderAdminSettings();
+    renderAll(profilesCache);
+
+    await pushAdminBundleToBackend();
+  } finally {
+    isApplyingChangeLogState = false;
+  }
+};
+
+const undoStateChange = async () => {
+  if (changeLogCursor < 0) return;
+  const entry = changeLogEntries[changeLogCursor];
+  if (!entry?.before) return;
+  await applyStateSnapshot(entry.before);
+  changeLogCursor -= 1;
+  saveChangeLog();
+  renderAdminReviewLog();
+};
+
+const redoStateChange = async () => {
+  if (changeLogCursor >= changeLogEntries.length - 1) return;
+  const entry = changeLogEntries[changeLogCursor + 1];
+  if (!entry?.after) return;
+  await applyStateSnapshot(entry.after);
+  changeLogCursor += 1;
+  saveChangeLog();
+  renderAdminReviewLog();
+};
+
+const withChangeLog = async (label, operation) => {
+  const beforeSnapshot = captureStateSnapshot();
+  const result = await operation();
+  const afterSnapshot = captureStateSnapshot();
+  recordStateChange(label, beforeSnapshot, afterSnapshot);
+  renderAdminReviewLog();
+  return result;
+};
+
 const loadRecentTagColors = () => {
   try {
     const parsed = JSON.parse(localStorage.getItem(RECENT_TAG_COLORS_KEY) || '[]');
@@ -1117,11 +1245,11 @@ const matchesProfileSearch = (profile, rawTerm) => {
 };
 
 const buildProfileCardMarkup = (profile, options = {}) => {
-  const { condensed = false } = options;
+  const { condensed = false, rankPosition = null, totalWorkers = null } = options;
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
-  const { consistencyBuff } = computeRankScore(profile);
+  const rankMarkup = rankPosition ? `<span>Rank: #${rankPosition} out of ${totalWorkers}</span>` : '';
 
   if (condensed) {
     const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
@@ -1132,7 +1260,8 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       </div>
       <div class="meta compact-meta">
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-        <span>Consistency bonus (ranking only): +${consistencyBuff}</span>
+        <span>Jobs: ${computeJobsCount(profile)}</span>
+        ${rankMarkup}
       </div>
       <p class="hint">Top category: ${topCategory}</p>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
@@ -1148,7 +1277,8 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
       <span>Ratings: ${profile.ratings.length}</span>
       <span>Avg score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-      <span>Consistency bonus (ranking only): +${consistencyBuff}</span>
+      <span>Jobs: ${computeJobsCount(profile)}</span>
+      ${rankMarkup}
     </div>
     ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
     <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
@@ -1233,13 +1363,14 @@ const renderProfiles = (profiles) => {
   }
 
   const topPerformers = sorted.slice(0, 3);
-  const badWorkers = [...sorted].reverse().slice(0, 5);
+  const badWorkers = [...sorted].reverse().slice(0, 3);
 
   if (topPerformersList) {
     topPerformers.forEach((profile) => {
       const item = document.createElement('li');
       item.className = 'profile-item top-performer-card';
-      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true });
+      const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sorted.length });
       topPerformersList.appendChild(item);
     });
   }
@@ -1247,7 +1378,8 @@ const renderProfiles = (profiles) => {
   badWorkers.forEach((profile) => {
     const item = document.createElement('li');
     item.className = 'profile-item at-risk-preview';
-    item.innerHTML = buildProfileCardMarkup(profile, { condensed: true });
+    const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+    item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sorted.length });
     profilesList.appendChild(item);
   });
 };
@@ -1287,6 +1419,7 @@ const renderWorkerSearchResults = (profiles) => {
   }
 
   filtered.forEach((profile) => {
+    const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
     const item = document.createElement('li');
     item.className = 'profile-item';
     item.innerHTML = `
@@ -1297,7 +1430,8 @@ const renderWorkerSearchResults = (profiles) => {
       <div class="meta">
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
         <span>Consistency: ${Number(profile.analytics?.consistencyScore || 0).toFixed(1)}%</span>
-        <span>Consistency buff: +${computeRankScore(profile).consistencyBuff}</span>
+        <span>Jobs: ${computeJobsCount(profile)}</span>
+        <span>Rank: #${rankPosition} out of ${sorted.length}</span>
       </div>
     `;
     workerSearchResults.appendChild(item);
@@ -1501,13 +1635,22 @@ const renderWorkerProfile = (profiles, workerId) => {
 
   const badgeClass = ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+  const sortedByRank = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
+  const rankPosition = Math.max(1, sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1);
+  const totalWorkers = sortedByRank.length;
+  const scoreTitle = performanceTierLabel(toTenPointScale(overallScore));
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
+      <div class="profile-hero-score">
+        <strong>${toTenPointScale(overallScore)}</strong>
+        <span class="score-title">${scoreTitle}</span>
+        <span class="hint">Rank: #${rankPosition} out of ${totalWorkers}</span>
+      </div>
       <div class="profile-score-cards">
         <article class="profile-score-card">
-          <p class="hint">Average rating (1-10)</p>
-          <strong>${toTenPointScale(overallScore)}</strong>
+          <p class="hint">Jobs (reviews)</p>
+          <strong>${computeJobsCount(profile)}</strong>
         </article>
         <article class="profile-score-card">
           <p class="hint">Top job category</p>
@@ -1523,7 +1666,7 @@ const renderWorkerProfile = (profiles, workerId) => {
         </article>
       </div>
       <div class="meta">
-        <span>Consistency: ${Number(analytics.consistencyScore || 0).toFixed(1)}%</span>
+        <span>Rank: #${rankPosition} out of ${totalWorkers}</span>
         <span>Positive streak: ${analytics.currentPositiveStreak || 0}</span>
         <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
@@ -1723,6 +1866,8 @@ const renderAdminSettings = () => {
   renderRecentTagColors();
   renderChecklistMathBuilderOptions();
   renderChecklistMathRules();
+  renderAdminReviewLog();
+  renderAdminProfileDeleteList(profilesCache);
   renderJobTypeOptions();
 };
 
@@ -1733,7 +1878,8 @@ const syncStatusWeightsFromInputs = () => {
   });
 };
 
-const persistAdminSettings = ({ rerenderAdmin = false } = {}) => {
+const persistAdminSettings = ({ rerenderAdmin = false, actionLabel = 'Admin settings updated' } = {}) => {
+  const beforeSnapshot = captureStateSnapshot();
   saveAdminSettings();
   updateAdminCatalog();
   pushAdminBundleToBackend();
@@ -1741,6 +1887,9 @@ const persistAdminSettings = ({ rerenderAdmin = false } = {}) => {
     renderAdminSettings();
   }
   renderAll(profilesCache);
+  const afterSnapshot = captureStateSnapshot();
+  recordStateChange(actionLabel, beforeSnapshot, afterSnapshot);
+  renderAdminReviewLog();
 };
 
 const renderRatingCriteriaRows = () => {
@@ -1786,6 +1935,44 @@ const renderCriterionRatings = () => {
 };
 
 
+
+const renderAdminReviewLog = () => {
+  if (!adminReviewLog) return;
+
+  if (!changeLogEntries.length) {
+    adminReviewLog.innerHTML = '<p class="hint">No changes logged yet.</p>';
+    updateChangeLogButtons();
+    return;
+  }
+
+  const rows = [...changeLogEntries]
+    .map((entry, index) => {
+      const stateTag = index === changeLogCursor ? ' <span class="badge steady">Current</span>' : '';
+      return `<li class="entry-row"><div><strong>${formatTimestamp(entry.createdAt)}</strong> — ${cleanFrontEndDisplayText(entry.label)}${stateTag}</div></li>`;
+    })
+    .reverse()
+    .join('');
+
+  adminReviewLog.innerHTML = `<ul class="history-summary">${rows}</ul>`;
+  updateChangeLogButtons();
+};
+
+const renderAdminProfileDeleteList = (profiles) => {
+  if (!adminProfileDeleteList) return;
+
+  if (!profiles?.length) {
+    adminProfileDeleteList.innerHTML = '<p class="hint">No profiles available.</p>';
+    return;
+  }
+
+  const rows = [...profiles]
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    .map((profile) => `<div class="problem-row"><span><strong>${profile.name}</strong> <span class="hint">(${(profile.ratings || []).length} ratings)</span></span><div class="row-actions"><button type="button" class="secondary" data-admin-delete-profile-id="${profile.id}">Delete profile</button></div></div>`)
+    .join('');
+
+  adminProfileDeleteList.innerHTML = rows;
+};
+
 const renderMaintenanceReport = (report) => {
   if (!maintenanceReport) return;
   const duplicates = report?.potentialDuplicates || [];
@@ -1826,6 +2013,8 @@ const renderAll = (profiles) => {
   renderRecentTagColors();
   renderChecklistMathBuilderOptions();
   renderChecklistMathRules();
+  renderAdminReviewLog();
+  renderAdminProfileDeleteList(profiles);
 };
 
 const renderRuleSelect = () => {
@@ -2332,13 +2521,13 @@ const buildRatingPayload = (data) => {
   };
 };
 
-const submitRating = async (rating) => {
+const submitRating = async (rating) => withChangeLog(`Rating saved for ${rating.workerName}`, async () => {
   const savedProfile = await saveRating(rating);
   await refreshFromBackend();
   workerSelector.value = String(savedProfile.id);
   renderWorkerProfile(profilesCache, savedProfile.id);
   return savedProfile;
-};
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2504,6 +2693,7 @@ if (criteriaRatingsContainer) {
 
 if (addRatingCriterionButton) {
   addRatingCriterionButton.addEventListener('click', () => {
+    const beforeSnapshot = captureStateSnapshot();
     const criterionNameInput = document.getElementById('criterion-name');
     if (!ensurePanelOpen(addRatingCriterionPanel, criterionNameInput)) return;
 
@@ -2558,6 +2748,8 @@ if (addRatingCriterionButton) {
     addRatingCriterionPanel?.classList.add('hidden');
     saveRatingCriteria();
     renderRatingCriteriaRows();
+    recordStateChange('Checklist criteria updated', beforeSnapshot, captureStateSnapshot());
+    renderAdminReviewLog();
   });
 }
 
@@ -2592,9 +2784,12 @@ if (ratingCriteriaList) {
     if (!criterionId) return;
     if (!confirmAction('Do you really want to remove this checklist item?')) return;
 
+    const beforeSnapshot = captureStateSnapshot();
     ratingCriteria = ratingCriteria.filter((criterion) => criterion.id !== criterionId);
     saveRatingCriteria();
     renderRatingCriteriaRows();
+    recordStateChange('Checklist criterion deleted', beforeSnapshot, captureStateSnapshot());
+    renderAdminReviewLog();
   });
 }
 
@@ -2828,6 +3023,52 @@ if (checklistMathRulesList) {
 
 
 
+
+if (adminLogUndoButton) {
+  adminLogUndoButton.addEventListener('click', async () => {
+    try {
+      await undoStateChange();
+    } catch (error) {
+      alert(error.message || 'Unable to undo change.');
+    }
+  });
+}
+
+if (adminLogRedoButton) {
+  adminLogRedoButton.addEventListener('click', async () => {
+    try {
+      await redoStateChange();
+    } catch (error) {
+      alert(error.message || 'Unable to redo change.');
+    }
+  });
+}
+
+if (adminProfileDeleteList) {
+  adminProfileDeleteList.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const profileIdToDelete = target.getAttribute('data-admin-delete-profile-id');
+    if (!profileIdToDelete) return;
+
+    const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToDelete));
+    if (!profile) return;
+
+    if (!confirmAction(`Delete profile "${profile.name}" and all linked data? This cannot be undone.`)) return;
+
+    try {
+      await withChangeLog(`Profile deleted: ${profile.name}`, async () => {
+        await deleteProfile(profileIdToDelete);
+        await refreshFromBackend({ silent: true });
+      });
+    } catch (error) {
+      alert(error.message || 'Unable to delete profile.');
+    }
+  });
+}
+
+
 if (profilesList) {
   profilesList.addEventListener('click', async (event) => {
     const target = event.target;
@@ -2931,10 +3172,14 @@ addProfileForm.addEventListener('submit', async (event) => {
   }
 
   try {
-    const savedProfile = editingProfileId
-      ? await updateProfile(editingProfileId, profilePayload)
-      : await addProfile(profilePayload);
-    await refreshFromBackend();
+    const modeLabel = editingProfileId ? `Profile updated: ${profilePayload.name}` : `Profile created: ${profilePayload.name}`;
+    const savedProfile = await withChangeLog(modeLabel, async () => {
+      const profileResult = editingProfileId
+        ? await updateProfile(editingProfileId, profilePayload)
+        : await addProfile(profilePayload);
+      await refreshFromBackend();
+      return profileResult;
+    });
     workerSelector.value = String(savedProfile.id);
     renderWorkerProfile(profilesCache, savedProfile.id);
     document.getElementById('workerName').value = savedProfile.name;
@@ -3012,9 +3257,11 @@ clearButton.addEventListener('click', async () => {
   if (!canAccessAdmin()) return;
   if (!confirmAction('Do you really want to clear?')) return;
   try {
-    await clearProfiles();
-    workerSelector.value = '';
-    await refreshFromBackend();
+    await withChangeLog('Cleared all profiles', async () => {
+      await clearProfiles();
+      workerSelector.value = '';
+      await refreshFromBackend();
+    });
   } catch (error) {
     // eslint-disable-next-line no-alert
     alert(error.message);
@@ -3099,7 +3346,9 @@ if (restoreBrowserBackupInput) {
     if (!file) return;
 
     try {
-      await restoreBrowserBackup(file);
+      await withChangeLog('Browser backup restored', async () => {
+        await restoreBrowserBackup(file);
+      });
       alert('Backup restored. Shared settings were synced.');
     } catch (error) {
       alert(error.message || 'Unable to restore backup file.');
@@ -3134,9 +3383,11 @@ if (!localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY)) {
 adminSettings = loadAdminSettings();
 ratingRules = loadRatingRules();
 ratingCriteria = loadRatingCriteria();
+loadChangeLog();
 initializeStatusOptions();
 renderRules();
 renderAdminSettings();
+renderAdminReviewLog();
 setupAdminSectionToggles();
 resetHistoryEntries();
 resetNoteEntries();

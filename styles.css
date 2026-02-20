@@ -613,6 +613,26 @@ select:user-invalid {
   font-size: 22px;
 }
 
+.profile-hero-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.profile-hero-score strong {
+  font-size: 38px;
+  line-height: 1;
+  color: #1f2330;
+}
+
+.profile-hero-score .score-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #3e4661;
+}
+
 .profile-score-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
