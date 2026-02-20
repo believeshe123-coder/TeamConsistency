@@ -1271,19 +1271,38 @@ const buildProfileCardMarkup = (profile, options = {}) => {
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
 
   if (condensed) {
-    const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
+    const tenPointScore = toTenPointScale(profile.overallScore);
     const rankText = rankPosition && totalWorkers ? `Rank #${rankPosition}/${totalWorkers}` : '';
+    const ratings = Array.isArray(profile.ratings) ? profile.ratings : [];
+    const jobTypeSummary = summarizeJobTypeScores(ratings);
+    const topCategories = jobTypeSummary.slice(0, 2).map((entry) => entry.jobType).join(', ') || '—';
+    const worstCategories = [...jobTypeSummary].reverse().slice(0, 2).map((entry) => entry.jobType).join(', ') || '—';
+    const scoreScalePills = [
+      { range: '9–10', label: 'Elite', active: tenPointScore >= 9 },
+      { range: '7–8.9', label: 'Reliable', active: tenPointScore >= 7 && tenPointScore < 9 },
+      { range: '5–6.9', label: 'Solid', active: tenPointScore >= 5 && tenPointScore < 7 },
+      { range: '4–4.9', label: 'Needs support', active: tenPointScore >= 4 && tenPointScore < 5 },
+      { range: '1–3.9', label: 'Critical risk', active: tenPointScore < 4 },
+    ];
+
     return `
       <div class="profile-item-head">
         <strong>${profile.name}</strong>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
       </div>
       <div class="meta compact-meta">
-        <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
+        <span>Worker score scale (1-10): ${tenPointScore}</span>
         <span>Consistent for: ${computeConsistentDays(profile)} day(s)</span>
       </div>
-      ${rankText ? `<p class="rank-chip" aria-label="Worker rank">${rankText}</p>` : ''}
-      <p class="hint">Top category: ${topCategory}</p>
+      <div class="score-pill-list" aria-label="Worker score scale tiers">${scoreScalePills
+        .map((entry) => `<span class="badge score-pill ${entry.active ? 'score-pill-active' : 'score-pill-muted'}"><b>${entry.range}</b> ${entry.label}</span>`)
+        .join('')}</div>
+      <div class="meta compact-meta">
+        ${rankText ? `<span class="rank-chip" aria-label="Worker rank">${rankText}</span>` : ''}
+        <span>Rated: ${ratings.length} time(s)</span>
+      </div>
+      <p class="hint">Top categories: ${topCategories}</p>
+      <p class="hint">Worst categories: ${worstCategories}</p>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
     `;
   }
@@ -1307,10 +1326,10 @@ const buildProfileCardMarkup = (profile, options = {}) => {
 const renderPreviewCards = (targetList, type) => {
   if (!targetList) return;
   if (type === 'top') {
-    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Score (1-10): 9.6</span></div><p class="rank-chip" aria-label="Worker rank">Rank #1/12</p><p class="hint">Preview example worker</p></li>';
+    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Worker score scale (1-10): 9.6</span><span>Consistent for: 18 day(s)</span></div><div class="meta compact-meta"><span class="rank-chip" aria-label="Worker rank">Rank #1/12</span><span>Rated: 24 time(s)</span></div><p class="hint">Top categories: Prep, Dish</p><p class="hint">Worst categories: Register</p></li>';
     return;
   }
-  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Score (1-10): 3.6</span></div><p class="rank-chip" aria-label="Worker rank">Rank #12/12</p><p class="hint">Preview example worker</p></li>';
+  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Worker score scale (1-10): 3.6</span><span>Consistent for: 0 day(s)</span></div><div class="meta compact-meta"><span class="rank-chip" aria-label="Worker rank">Rank #12/12</span><span>Rated: 11 time(s)</span></div><p class="hint">Top categories: Stock</p><p class="hint">Worst categories: Drive-thru, Prep</p></li>';
 };
 
 const getBestPerCategoryProfiles = (profiles) => {
@@ -3087,8 +3106,7 @@ if (adminProfileDeleteList) {
 }
 
 
-if (profilesList) {
-  profilesList.addEventListener('click', async (event) => {
+const handleProfileListActions = async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
@@ -3106,7 +3124,14 @@ if (profilesList) {
     const profile = profilesCache.find((entry) => String(entry.id) === String(profileIdToDelete));
     if (!profile) return;
     alert(`Deleting profiles is admin-only. "${profile.name}" can be edited from the front end but not deleted here.`);
-  });
+};
+
+if (profilesList) {
+  profilesList.addEventListener('click', handleProfileListActions);
+}
+
+if (topPerformersList) {
+  topPerformersList.addEventListener('click', handleProfileListActions);
 }
 
 
