@@ -722,6 +722,13 @@ const normalizeColorHex = (color) => {
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : '#5f8df5';
 };
 
+const cleanFrontEndDisplayText = (text) => String(text || '')
+  .replace(/\s*\(\d+(?:\.\d+)?\s*\/\s*10\)\s*/gi, ' ')
+  .replace(/\s*\(w\s*:\s*[-\d.]+\)\s*/gi, ' ')
+  .replace(/\s*\(base\s*:\s*[-\d.]+\s*,\s*weight\s*:\s*[-\d.]+\)\s*/gi, ' ')
+  .replace(/\s{2,}/g, ' ')
+  .trim();
+
 const loadRecentTagColors = () => {
   try {
     const parsed = JSON.parse(localStorage.getItem(RECENT_TAG_COLORS_KEY) || '[]');
@@ -1052,7 +1059,7 @@ const renderProfileNotesTimeline = (profileId, profileNotes) => {
   }
 
   const rows = profileNotes
-    .map((entry) => `<li class="entry-row"><span><strong>${formatTimestamp(entry.createdAt)}:</strong> ${entry.note}</span></li>`)
+    .map((entry) => `<li class="entry-row"><span><strong>${formatTimestamp(entry.createdAt)}:</strong> ${cleanFrontEndDisplayText(entry.note)}</span></li>`)
     .join('');
 
   return `<ul class="history-summary">${rows}</ul>`;
@@ -1065,7 +1072,7 @@ const renderHistorySummary = (historyEntries) => {
 
   const rows = historyEntries
     .map((entry) => {
-      const detail = entry.note ? ` — ${entry.note}` : '';
+      const detail = entry.note ? ` — ${cleanFrontEndDisplayText(entry.note)}` : '';
       return `<li><label><input type="checkbox" checked disabled /> ${entry.category}: ${entry.score}${detail} <span class="hint">(${formatTimestamp(entry.createdAt)})</span></label></li>`;
     })
     .join('');
@@ -1085,7 +1092,7 @@ const renderExactRatings = (profileId, ratings) => {
     .sort((a, b) => new Date(b.ratedAt).getTime() - new Date(a.ratedAt).getTime())
     .map((entry) => {
       const date = formatTimestamp(entry.ratedAt);
-      const note = entry.note ? `<p class="hint">${entry.note}</p>` : '';
+      const note = entry.note ? `<p class="hint">${cleanFrontEndDisplayText(entry.note)}</p>` : '';
       const removeButton = showRemoveActions
         ? `<button type="button" class="secondary" data-delete-rating-id="${entry.id}" data-profile-id="${profileId}">Remove</button>`
         : '';
@@ -1114,7 +1121,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
   const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
   const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
-  const { rankScore, consistencyBuff } = computeRankScore(profile);
+  const { consistencyBuff } = computeRankScore(profile);
 
   if (condensed) {
     const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
@@ -1125,8 +1132,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       </div>
       <div class="meta compact-meta">
         <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-        <span>Rank: ${rankScore}</span>
-        <span>Consistency buff: +${consistencyBuff}</span>
+        <span>Consistency bonus (ranking only): +${consistencyBuff}</span>
       </div>
       <p class="hint">Top category: ${topCategory}</p>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
@@ -1142,8 +1148,7 @@ const buildProfileCardMarkup = (profile, options = {}) => {
       <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
       <span>Ratings: ${profile.ratings.length}</span>
       <span>Avg score (1-10): ${toTenPointScale(profile.overallScore)}</span>
-      <span>Rank score: ${rankScore}</span>
-      <span>Consistency buff: +${consistencyBuff}</span>
+      <span>Consistency bonus (ranking only): +${consistencyBuff}</span>
     </div>
     ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
     <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
@@ -1153,10 +1158,10 @@ const buildProfileCardMarkup = (profile, options = {}) => {
 const renderPreviewCards = (targetList, type) => {
   if (!targetList) return;
   if (type === 'top') {
-    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Score (1-10): 9.6</span><span>Rank: 5.1</span></div><p class="hint">Preview example worker</p></li>';
+    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Score (1-10): 9.6</span></div><p class="hint">Preview example worker</p></li>';
     return;
   }
-  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Score (1-10): 3.6</span><span>Rank: 1.4</span></div><p class="hint">Preview example worker</p></li>';
+  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Score (1-10): 3.6</span></div><p class="hint">Preview example worker</p></li>';
 };
 
 const getBestPerCategoryProfiles = (profiles) => {
