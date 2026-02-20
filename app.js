@@ -18,6 +18,7 @@ const addNoteEntryButton = document.getElementById('add-note-entry');
 const profileHistoryList = document.getElementById('profile-history-list');
 const profileNotesList = document.getElementById('profile-notes-list');
 const profilesList = document.getElementById('profiles');
+const topPerformersList = document.getElementById('top-performers');
 const clearButton = document.getElementById('clear-data');
 const refreshProfilesButton = document.getElementById('refresh-profiles');
 const dataSyncStatus = document.getElementById('data-sync-status');
@@ -71,6 +72,12 @@ const maintenanceReport = document.getElementById('maintenance-report');
 const downloadBrowserBackupButton = document.getElementById('download-browser-backup');
 const restoreBrowserBackupInput = document.getElementById('restore-browser-backup');
 const profileSearchInput = document.getElementById('profile-search');
+const workerSearchNameInput = document.getElementById('worker-search-name');
+const workerSearchModeSelect = document.getElementById('worker-search-mode');
+const workerSearchJobTypeSelect = document.getElementById('worker-search-job-type');
+const workerSearchCriterionSelect = document.getElementById('worker-search-criterion');
+const workerSearchResetButton = document.getElementById('worker-search-reset');
+const workerSearchResults = document.getElementById('worker-search-results');
 
 let profilesCache = [];
 let ratingRules = [];
@@ -97,7 +104,7 @@ const confirmAction = (message = 'Do you really want to clear?') => window.confi
 const AUTO_SYNC_INTERVAL_MS = 60000;
 const ADMIN_SYNC_KEY = 'settings_bundle_v1';
 
-const DEFAULT_STEADY_TAG = { id: 'steady-default', label: 'Steady', color: '#5f8df5', locked: true };
+const DEFAULT_STEADY_TAG = { id: 'steady-default', label: 'Solid', color: '#5f8df5', locked: true };
 
 const loadLocalProfiles = () => {
   try {
@@ -115,6 +122,15 @@ const saveLocalProfiles = (profiles) => {
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const toFivePointScale = (rawScore) => Number((((clamp(Number(rawScore) || 0, -5, 5) + 5) / 2)).toFixed(2));
 const isPunctualityCategory = (category) => ['punctuality', 'attendance', 'timeliness', 'late'].some((token) => String(category || '').toLowerCase().includes(token));
+
+const toTenPointScale = (score) => Number((clamp(Number(score) || 0, 0, 5) * 2).toFixed(1));
+const performanceTierLabel = (tenPointScore) => {
+  if (tenPointScore >= 9) return 'Elite';
+  if (tenPointScore >= 7) return 'Reliable';
+  if (tenPointScore >= 5) return 'Solid';
+  if (tenPointScore >= 4) return 'Needs support';
+  return 'Critical risk';
+};
 
 const computeProfileAnalytics = (ratings) => {
   if (!ratings.length) {
@@ -214,8 +230,9 @@ const upsertLocalProfile = (incomingProfile) => {
 };
 
 const statusFromScore = (score) => {
-  if (score >= 4) return 'top-performer';
-  if (score <= 2) return 'at-risk';
+  const tenPointScore = toTenPointScale(score);
+  if (tenPointScore >= 6) return 'top-performer';
+  if (tenPointScore <= 4) return 'at-risk';
   return 'steady';
 };
 
@@ -223,14 +240,16 @@ const getStatusWeight = (status) => Number(adminSettings.statusWeights?.[status]
 
 const computeRankScore = (profile) => {
   const statusWeight = getStatusWeight(profile.profileStatus);
-  const rankScore = Number((Number(profile.overallScore || 0) + statusWeight).toFixed(2));
-  return { rankScore, statusWeight };
+  const consistencyScore = Number(profile.analytics?.consistencyScore || 0);
+  const consistencyBuff = Number((Math.max(0, (consistencyScore - 50) / 50) * 1.5).toFixed(2));
+  const rankScore = Number((Number(profile.overallScore || 0) + statusWeight + consistencyBuff).toFixed(2));
+  return { rankScore, statusWeight, consistencyBuff };
 };
 
 const statusLabelFromClass = (badgeClass) => {
-  if (badgeClass === 'top-performer') return 'Top performer';
-  if (badgeClass === 'at-risk') return 'At risk';
-  if (badgeClass === 'steady') return 'Steady';
+  if (badgeClass === 'top-performer') return 'Reliable';
+  if (badgeClass === 'at-risk') return 'Needs support';
+  if (badgeClass === 'steady') return 'Solid';
   return 'Unrated';
 };
 
@@ -645,7 +664,7 @@ const normalizeCustomTags = (tags) => {
 
   return normalized.map((tag) => (
     (tag.label.toLowerCase() === 'steady' || tag.id === DEFAULT_STEADY_TAG.id)
-      ? { ...tag, id: DEFAULT_STEADY_TAG.id, label: 'Steady', color: tag.color || DEFAULT_STEADY_TAG.color, locked: true }
+      ? { ...tag, id: DEFAULT_STEADY_TAG.id, label: 'Solid', color: tag.color || DEFAULT_STEADY_TAG.color, locked: true }
       : tag
   ));
 };
@@ -1093,53 +1112,196 @@ const matchesProfileSearch = (profile, rawTerm) => {
   return haystack.includes(term);
 };
 
+const buildProfileCardMarkup = (profile, options = {}) => {
+  const { condensed = false } = options;
+  const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
+  const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+  const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
+  const { rankScore, statusWeight, consistencyBuff } = computeRankScore(profile);
+
+  if (condensed) {
+    const topCategory = Array.isArray(profile.jobCategories) && profile.jobCategories.length ? profile.jobCategories[0] : 'No category yet';
+    return `
+      <div class="profile-item-head">
+        <strong>${profile.name}</strong>
+        <span class="badge ${badgeClass}">${badgeLabel}</span>
+      </div>
+      <div class="meta compact-meta">
+        <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
+        <span>Rank: ${rankScore}</span>
+        <span>Consistency buff: +${consistencyBuff}</span>
+      </div>
+      <p class="hint">Top category: ${topCategory}</p>
+      <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
+    `;
+  }
+
+  return `
+    <div class="profile-item-head">
+      <strong>${profile.name}</strong>
+      <span class="badge ${badgeClass}">${badgeLabel}</span>
+    </div>
+    <div class="meta">
+      <span>Status: ${profile.profileStatus || '—'}</span>
+      <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
+      <span>Ratings: ${profile.ratings.length}</span>
+      <span>Avg score (1-10): ${toTenPointScale(profile.overallScore)}</span>
+      <span>Rank score: ${rankScore}</span>
+      <span>Status weight: ${statusWeight}</span>
+      <span>Consistency buff: +${consistencyBuff}</span>
+    </div>
+    ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
+    <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
+  `;
+};
+
+const renderPreviewCards = (targetList, type) => {
+  if (!targetList) return;
+  if (type === 'top') {
+    targetList.innerHTML = '<li class="profile-item top-performer-card"><div class="profile-item-head"><strong>Jasmine R.</strong><span class="badge top-performer">Reliable</span></div><div class="meta compact-meta"><span>Score (1-10): 9.6</span><span>Rank: 5.1</span></div><p class="hint">Preview example worker</p></li>';
+    return;
+  }
+  targetList.innerHTML = '<li class="profile-item at-risk-preview"><div class="profile-item-head"><strong>Test Bad</strong><span class="badge at-risk">Needs support</span></div><div class="meta compact-meta"><span>Score (1-10): 3.6</span><span>Rank: 1.4</span></div><p class="hint">Preview example worker</p></li>';
+};
+
+const getBestPerCategoryProfiles = (profiles) => {
+  const bestByCategory = new Map();
+
+  profiles.forEach((profile) => {
+    const summary = summarizeJobTypeScores(profile.ratings || []);
+    summary.forEach((entry) => {
+      const existing = bestByCategory.get(entry.jobType);
+      if (!existing || Number(entry.average) > Number(existing.average)) {
+        bestByCategory.set(entry.jobType, { profile, average: entry.average });
+      }
+    });
+  });
+
+  return [...new Map([...bestByCategory.values()].map((entry) => [String(entry.profile.id), entry.profile])).values()];
+};
+
+const profileMatchesCriterion = (profile, criterionName) => {
+  if (!criterionName) return true;
+  const normalized = String(criterionName).toLowerCase();
+  return (profile.ratings || []).some((rating) => parseChecklistEntries(rating.note).some((entry) => entry.criterion.toLowerCase() === normalized));
+};
+
+const profileMatchesJobType = (profile, jobType) => {
+  if (!jobType) return true;
+  return (profile.ratings || []).some((rating) => String(rating.category || '').toLowerCase() === String(jobType).toLowerCase());
+};
+
+const renderWorkerSearchFilters = () => {
+  if (workerSearchJobTypeSelect) {
+    const previous = workerSearchJobTypeSelect.value;
+    workerSearchJobTypeSelect.innerHTML = '<option value="">Any job type</option>';
+    (adminSettings.jobTypes || []).forEach((jobType) => {
+      const option = document.createElement('option');
+      option.value = jobType;
+      option.textContent = jobType;
+      workerSearchJobTypeSelect.appendChild(option);
+    });
+    if ([...workerSearchJobTypeSelect.options].some((option) => option.value === previous)) {
+      workerSearchJobTypeSelect.value = previous;
+    }
+  }
+
+  if (workerSearchCriterionSelect) {
+    const previous = workerSearchCriterionSelect.value;
+    workerSearchCriterionSelect.innerHTML = '<option value="">Any checklist item</option>';
+    ratingCriteria.forEach((criterion) => {
+      const option = document.createElement('option');
+      option.value = criterion.name;
+      option.textContent = criterion.name;
+      workerSearchCriterionSelect.appendChild(option);
+    });
+    if ([...workerSearchCriterionSelect.options].some((option) => option.value === previous)) {
+      workerSearchCriterionSelect.value = previous;
+    }
+  }
+};
+
 const renderProfiles = (profiles) => {
   profilesList.innerHTML = '';
+  if (topPerformersList) topPerformersList.innerHTML = '';
 
-  const searchTerm = profileSearchInput?.value || '';
-  const sorted = [...profiles]
-    .filter((profile) => matchesProfileSearch(profile, searchTerm))
-    .sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
-  if (sorted.length === 0) {
-    const emptyMessage = searchTerm
-      ? 'No workers match this search yet.'
-      : 'No workers yet. Add a profile or rating to start building profiles.';
-    profilesList.innerHTML = `<li class="profile-item">${emptyMessage}</li>`;
+  const sorted = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
+  if (!sorted.length) {
+    renderPreviewCards(topPerformersList, 'top');
+    renderPreviewCards(profilesList, 'bad');
     return;
   }
 
-  sorted.forEach((profile) => {
+  const topPerformers = sorted.slice(0, 3);
+  const badWorkers = [...sorted].reverse().slice(0, 5);
+
+  if (topPerformersList) {
+    topPerformers.forEach((profile) => {
+      const item = document.createElement('li');
+      item.className = 'profile-item top-performer-card';
+      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true });
+      topPerformersList.appendChild(item);
+    });
+  }
+
+  badWorkers.forEach((profile) => {
+    const item = document.createElement('li');
+    item.className = 'profile-item at-risk-preview';
+    item.innerHTML = buildProfileCardMarkup(profile, { condensed: true });
+    profilesList.appendChild(item);
+  });
+};
+
+const renderWorkerSearchResults = (profiles) => {
+  if (!workerSearchResults) return;
+  workerSearchResults.innerHTML = '';
+
+  const mode = workerSearchModeSelect?.value || 'all';
+  const term = String(workerSearchNameInput?.value || '').trim().toLowerCase();
+  const selectedJobType = workerSearchJobTypeSelect?.value || '';
+  const selectedCriterion = workerSearchCriterionSelect?.value || '';
+
+  const sorted = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
+  let source = sorted;
+
+  if (mode === 'top') source = sorted.slice(0, 8);
+  if (mode === 'bad') source = [...sorted].reverse().slice(0, 8);
+  if (mode === 'consistent') {
+    source = [...sorted]
+      .filter((profile) => (profile.ratings || []).length)
+      .sort((a, b) => Number(b.analytics?.consistencyScore || 0) - Number(a.analytics?.consistencyScore || 0))
+      .slice(0, 8);
+  }
+  if (mode === 'best-category') {
+    source = getBestPerCategoryProfiles(sorted);
+  }
+
+  const filtered = source.filter((profile) => {
+    const matchesName = !term || String(profile.name || '').toLowerCase().includes(term);
+    return matchesName && profileMatchesJobType(profile, selectedJobType) && profileMatchesCriterion(profile, selectedCriterion);
+  });
+
+  if (!filtered.length) {
+    workerSearchResults.innerHTML = '<li class="profile-item">No workers match this search yet.</li>';
+    return;
+  }
+
+  filtered.forEach((profile) => {
     const item = document.createElement('li');
     item.className = 'profile-item';
-    const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
-    const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
-    const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
-    const { rankScore, statusWeight } = computeRankScore(profile);
-
     item.innerHTML = `
-      <strong>${profile.name}</strong>
+      <div class="profile-item-head">
+        <strong>${profile.name}</strong>
+        <button type="button" class="secondary" data-view-worker-id="${profile.id}">View</button>
+      </div>
       <div class="meta">
+        <span>Score (1-10): ${toTenPointScale(profile.overallScore)}</span>
         <span>Status: ${profile.profileStatus || '—'}</span>
-        <span>Categories: ${profile.jobCategories.join(', ') || '—'}</span>
-        <span>Ratings: ${profile.ratings.length}</span>
-        <span>Avg score (0-5): ${profile.overallScore}</span>
-        <span>Rank score: ${rankScore}</span>
-        <span>Status weight: ${statusWeight}</span>
-        <span class="badge ${badgeClass}">${badgeLabel}</span>
+        <span>Consistency: ${Number(profile.analytics?.consistencyScore || 0).toFixed(1)}%</span>
+        <span>Consistency buff: +${computeRankScore(profile).consistencyBuff}</span>
       </div>
-      ${profile.backgroundInfo ? `<p class="hint">Background: ${profile.backgroundInfo}</p>` : ''}
-      ${latestNote ? `<p class="hint">Latest timed note (${formatTimestamp(latestNote.createdAt)}): ${latestNote.note}</p>` : ''}
-      <div>
-        <h4>Profile history summary</h4>
-        ${renderHistorySummary(profile.historyEntries)}
-      </div>
-      <details class="category-history">
-        <summary><strong>Full job rating details</strong></summary>
-        ${renderExactRatings(profile.id, profile.ratings)}
-      </details>
-      <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
     `;
-    profilesList.appendChild(item);
+    workerSearchResults.appendChild(item);
   });
 };
 
@@ -1299,7 +1461,7 @@ const computeChecklistSignals = (ratings) => {
 
 const renderWorkerProfile = (profiles, workerId) => {
   if (!workerId) {
-    workerProfileDetail.innerHTML = '<p class="hint">Choose a worker to inspect category-level rating history and trends.</p>';
+    workerProfileDetail.innerHTML = '<p class="hint">Choose a worker from search results to inspect category-level rating history, strengths, and trends.</p>';
     return;
   }
 
@@ -1345,8 +1507,8 @@ const renderWorkerProfile = (profiles, workerId) => {
       <h3>${profile.name}</h3>
       <div class="profile-score-cards">
         <article class="profile-score-card">
-          <p class="hint">Average rating (0-5)</p>
-          <strong>${overallScore}</strong>
+          <p class="hint">Average rating (1-10)</p>
+          <strong>${toTenPointScale(overallScore)}</strong>
         </article>
         <article class="profile-score-card">
           <p class="hint">Top job category</p>
@@ -1654,6 +1816,8 @@ const refreshMaintenanceReport = async () => {
 const renderAll = (profiles) => {
   renderProfiles(profiles);
   renderWorkerSelector(profiles);
+  renderWorkerSearchFilters();
+  renderWorkerSearchResults(profiles);
   renderWorkerNameOptions(profiles);
   renderWorkerProfile(profiles, workerSelector.value);
   renderJobTypeOptions();
@@ -2690,6 +2854,18 @@ if (profilesList) {
   });
 }
 
+
+if (workerSearchResults) {
+  workerSearchResults.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const workerId = target.getAttribute('data-view-worker-id');
+    if (!workerId) return;
+    workerSelector.value = String(workerId);
+    renderWorkerProfile(profilesCache, workerId);
+  });
+}
+
 if (workerProfileDetail) {
   workerProfileDetail.addEventListener('click', async (event) => {
     const target = event.target;
@@ -2812,6 +2988,27 @@ if (refreshProfilesButton) {
 if (profileSearchInput) {
   profileSearchInput.addEventListener('input', () => {
     renderProfiles(profilesCache);
+  });
+}
+
+[workerSearchNameInput, workerSearchModeSelect, workerSearchJobTypeSelect, workerSearchCriterionSelect]
+  .filter(Boolean)
+  .forEach((field) => {
+    field.addEventListener('input', () => {
+      renderWorkerSearchResults(profilesCache);
+    });
+    field.addEventListener('change', () => {
+      renderWorkerSearchResults(profilesCache);
+    });
+  });
+
+if (workerSearchResetButton) {
+  workerSearchResetButton.addEventListener('click', () => {
+    if (workerSearchNameInput) workerSearchNameInput.value = '';
+    if (workerSearchModeSelect) workerSearchModeSelect.value = 'all';
+    if (workerSearchJobTypeSelect) workerSearchJobTypeSelect.value = '';
+    if (workerSearchCriterionSelect) workerSearchCriterionSelect.value = '';
+    renderWorkerSearchResults(profilesCache);
   });
 }
 
