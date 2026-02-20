@@ -17,7 +17,15 @@
       <section id="main-page">
         <header>
           <h1>Worker Ratings Dashboard</h1>
-          <p>Find and review worker profiles first, then drill into rating history, trends, and issue patterns.</p>
+          <p>Find and review worker profiles first, then drill into rating history, trends, and issue patterns. Consistency now adds a rank buff.</p>
+          <div class="score-scale-guide" role="note" aria-label="Worker score scale guide">
+            <strong>Worker score scale (1–10):</strong>
+            <span><b>9–10:</b> Elite</span>
+            <span><b>7–8.9:</b> Reliable</span>
+            <span><b>5–6.9:</b> Solid (average range starts at 5)</span>
+            <span><b>4–4.9:</b> Needs support</span>
+            <span><b>1–3.9:</b> Critical risk</span>
+          </div>
         </header>
 
         <section class="card">
@@ -28,19 +36,54 @@
               <button type="button" id="refresh-profiles" class="secondary">Refresh</button>
             </div>
           </div>
-          <label>
-            <span class="label-text">Search workers</span>
-            <input id="profile-search" type="search" placeholder="Search by name, status, or category" />
-          </label>
-          <p class="hint">Browse profiles here first. Use ratings tab only when adding a new review.</p>
+          <p class="hint">Top left shows top-rated workers. Below it shows workers needing attention.</p>
+          <section class="directory-band">
+            <div class="directory-band-header">
+              <h3>Top Performers</h3>
+              <span class="hint">Highest ranked now</span>
+            </div>
+            <ul id="top-performers" class="profiles top-performers-list"></ul>
+          </section>
+          <div class="directory-band-header all-workers-header bad-workers-header">
+            <h3>Needs Attention</h3>
+            <span class="hint">Lowest-ranked workers</span>
+          </div>
           <ul id="profiles" class="profiles"></ul>
         </section>
 
         <div class="right-column-stack">
           <section class="card">
-            <h2>Profile Details & Trends</h2>
+            <h2>Worker Search</h2>
             <label>
-              <span class="label-text">Worker <span class="required-indicator" aria-hidden="true">*</span></span>
+              <span class="label-text">Search by name</span>
+              <input id="worker-search-name" type="search" placeholder="Search by worker name" />
+            </label>
+            <div class="field-grid worker-search-grid">
+              <label>
+                <span class="label-text">List</span>
+                <select id="worker-search-mode">
+                  <option value="all">All workers</option>
+                  <option value="top">Top profiles</option>
+                  <option value="bad">Needs attention</option>
+                  <option value="best-category">Best in each category</option>
+                  <option value="consistent">Most consistent</option>
+                </select>
+              </label>
+              <label>
+                <span class="label-text">Job type (admin list)</span>
+                <select id="worker-search-job-type"></select>
+              </label>
+              <label>
+                <span class="label-text">Checklist item (admin list)</span>
+                <select id="worker-search-criterion"></select>
+              </label>
+            </div>
+            <div class="section-actions">
+              <button type="button" id="worker-search-reset" class="secondary">Reset search</button>
+            </div>
+            <ul id="worker-search-results" class="profiles"></ul>
+            <label class="hidden">
+              <span class="label-text">Worker</span>
               <select id="worker-selector" aria-label="Select worker profile"></select>
             </label>
             <p class="hint">Quick add worker: type a name below to add them to the system (name only).</p>
@@ -50,7 +93,7 @@
             </div>
             <p id="quick-worker-feedback" class="hint" aria-live="polite"></p>
             <div id="worker-profile-detail" class="profile-detail">
-              <p class="hint">Choose a worker to inspect weighted trends and rating history.</p>
+              <p class="hint">Pick a worker from search results to inspect details.</p>
             </div>
           </section>
 
