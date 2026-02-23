@@ -30,13 +30,18 @@ const workerProfileDetail = document.getElementById('worker-profile-detail');
 const rulesForm = document.getElementById('rating-rules-form');
 const rulesList = document.getElementById('rating-rules-list');
 const ruleSelect = document.getElementById('rating-rule-select');
-const mainPage = document.getElementById('main-page');
+const dashboardPage = document.getElementById('dashboard-page');
+const profilesPage = document.getElementById('profiles-page');
 const ratingsPage = document.getElementById('ratings-page');
 const profilePage = document.getElementById('profile-page');
 const adminPage = document.getElementById('admin-page');
+const tabDashboard = document.getElementById('tab-dashboard');
 const tabProfiles = document.getElementById('tab-profiles');
 const tabRatings = document.getElementById('tab-ratings');
 const tabAdmin = document.getElementById('tab-admin');
+const goToProfilesButton = document.getElementById('go-to-profiles');
+const goToRatingsButton = document.getElementById('go-to-ratings');
+const profilesAddRatingButton = document.getElementById('profiles-add-rating');
 const adminSettingsForm = document.getElementById('admin-settings-form');
 const lockAdminButton = document.getElementById('lock-admin');
 const saveAdminPasswordButton = document.getElementById('save-admin-password');
@@ -98,6 +103,7 @@ let editingChecklistMathRuleId = null;
 let changeLogEntries = [];
 let changeLogCursor = -1;
 let isApplyingChangeLogState = false;
+let lastPrimaryView = 'dashboard';
 
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
 
@@ -1402,6 +1408,34 @@ const profileMatchesJobType = (profile, jobType) => {
   return (profile.ratings || []).some((rating) => String(rating.category || '').toLowerCase() === String(jobType).toLowerCase());
 };
 
+const collectJobTypesFromProfiles = (profiles = []) => {
+  const seen = new Set();
+
+  profiles.forEach((profile) => {
+    (profile.ratings || []).forEach((rating) => {
+      const value = String(rating.category || '').trim();
+      if (!value) return;
+      seen.add(value);
+    });
+  });
+
+  return [...seen];
+};
+
+const syncAdminJobTypesFromProfiles = (profiles = []) => {
+  const discovered = collectJobTypesFromProfiles(profiles);
+  if (!discovered.length) return false;
+
+  const existing = Array.isArray(adminSettings.jobTypes) ? adminSettings.jobTypes : [];
+  const existingLower = new Set(existing.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean));
+  const additions = discovered.filter((jobType) => !existingLower.has(String(jobType).toLowerCase()));
+  if (!additions.length) return false;
+
+  adminSettings.jobTypes = [...existing, ...additions];
+  saveAdminSettings();
+  return true;
+};
+
 const renderWorkerSearchFilters = () => {
   if (workerSearchJobTypeSelect) {
     const previous = workerSearchJobTypeSelect.value;
@@ -1443,8 +1477,8 @@ const renderProfiles = (profiles) => {
     return;
   }
 
-  const topPerformers = sorted.slice(0, 3);
-  const badWorkers = [...sorted].reverse().slice(0, 3);
+  const topPerformers = sorted.slice(0, 5);
+  const badWorkers = [...sorted].reverse().slice(0, 5);
 
   if (topPerformersList) {
     topPerformers.forEach((profile) => {
@@ -1502,7 +1536,8 @@ const renderWorkerSearchResults = (profiles) => {
   filtered.forEach((profile) => {
     const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
     const item = document.createElement('li');
-    item.className = 'profile-item';
+    const isActive = String(workerSelector?.value || '') === String(profile.id);
+    item.className = `profile-item${isActive ? ' active-search-result' : ''}`;
     item.innerHTML = `
       <div class="profile-item-head">
         <strong>${profile.name}</strong>
@@ -2083,6 +2118,7 @@ const refreshMaintenanceReport = async () => {
 };
 
 const renderAll = (profiles) => {
+  const adminSettingsChanged = syncAdminJobTypesFromProfiles(profiles);
   renderProfiles(profiles);
   renderWorkerSelector(profiles);
   renderWorkerSearchFilters();
@@ -2099,6 +2135,11 @@ const renderAll = (profiles) => {
   renderChecklistMathRules();
   renderAdminReviewLog();
   renderAdminProfileDeleteList(profiles);
+
+  if (adminSettingsChanged) {
+    updateAdminCatalog();
+    pushAdminBundleToBackend();
+  }
 };
 
 const renderRuleSelect = () => {
@@ -2457,25 +2498,31 @@ const lockAdminAccess = () => {
 };
 
 const setTopTabState = (view) => {
+  const isDashboard = view === 'dashboard';
   const isProfiles = view === 'profiles';
   const isRatings = view === 'ratings';
   const isAdmin = view === 'admin';
 
+  tabDashboard?.classList.toggle('active', isDashboard);
   tabProfiles?.classList.toggle('active', isProfiles);
   tabRatings?.classList.toggle('active', isRatings);
   tabAdmin?.classList.toggle('active', isAdmin);
 
+  tabDashboard?.setAttribute('aria-selected', String(isDashboard));
   tabProfiles?.setAttribute('aria-selected', String(isProfiles));
   tabRatings?.setAttribute('aria-selected', String(isRatings));
   tabAdmin?.setAttribute('aria-selected', String(isAdmin));
 };
 
 const showMainView = (view) => {
-  mainPage.classList.toggle('hidden', view !== 'profiles');
-  ratingsPage?.classList.toggle('hidden', view !== 'ratings');
+  const normalizedView = ['dashboard', 'profiles', 'ratings'].includes(view) ? view : 'dashboard';
+  dashboardPage?.classList.toggle('hidden', normalizedView !== 'dashboard');
+  profilesPage?.classList.toggle('hidden', normalizedView !== 'profiles');
+  ratingsPage?.classList.toggle('hidden', normalizedView !== 'ratings');
   profilePage.classList.add('hidden');
   adminPage.classList.add('hidden');
-  setTopTabState(view);
+  setTopTabState(normalizedView);
+  lastPrimaryView = normalizedView;
 };
 
 const showProfilePage = (show, options = {}) => {
@@ -2484,18 +2531,20 @@ const showProfilePage = (show, options = {}) => {
     return;
   }
 
-  mainPage.classList.add('hidden');
+  dashboardPage?.classList.add('hidden');
+  profilesPage?.classList.add('hidden');
   ratingsPage?.classList.add('hidden');
   profilePage.classList.toggle('hidden', !show);
   adminPage.classList.add('hidden');
-  setTopTabState('profiles');
+  setTopTabState(lastPrimaryView || 'dashboard');
 
   if (show) {
     history.pushState({ profilePage: true }, '', '#add-profile');
     document.getElementById('profileName').focus();
   } else if (window.location.hash === '#add-profile') {
-    history.pushState({}, '', '#profiles');
-    showMainView('profiles');
+    const fallbackHash = lastPrimaryView === 'profiles' ? '#profiles' : '#dashboard';
+    history.pushState({}, '', fallbackHash);
+    showMainView(lastPrimaryView === 'profiles' ? 'profiles' : 'dashboard');
   }
 };
 
@@ -2506,14 +2555,16 @@ const showAdminPage = (show) => {
 
   if (!show) {
     setAdminUnlocked(false);
-    showMainView('profiles');
+    showMainView(lastPrimaryView === 'profiles' ? 'profiles' : 'dashboard');
     if (window.location.hash === '#admin-settings') {
-      history.pushState({}, '', '#profiles');
+      const fallbackHash = lastPrimaryView === 'profiles' ? '#profiles' : '#dashboard';
+      history.pushState({}, '', fallbackHash);
     }
     return;
   }
 
-  mainPage.classList.add('hidden');
+  dashboardPage?.classList.add('hidden');
+  profilesPage?.classList.add('hidden');
   ratingsPage?.classList.add('hidden');
   profilePage.classList.add('hidden');
   adminPage.classList.remove('hidden');
@@ -2642,24 +2693,48 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+if (tabDashboard) {
+  tabDashboard.addEventListener('click', () => {
+    history.pushState({}, '', '#dashboard');
+    showMainView('dashboard');
+  });
+}
+
 if (tabProfiles) {
   tabProfiles.addEventListener('click', () => {
     if (window.location.hash === '#add-profile') {
       showProfilePage(false);
       return;
     }
-    if (window.location.hash === '#admin-settings') {
-      history.pushState({}, '', '#profiles');
-    }
+    history.pushState({}, '', '#profiles');
     showMainView('profiles');
   });
 }
 
 if (tabRatings) {
   tabRatings.addEventListener('click', () => {
-    if (window.location.hash === '#admin-settings') {
-      history.pushState({}, '', '#ratings');
-    }
+    history.pushState({}, '', '#ratings');
+    showMainView('ratings');
+  });
+}
+
+if (goToProfilesButton) {
+  goToProfilesButton.addEventListener('click', () => {
+    history.pushState({}, '', '#profiles');
+    showMainView('profiles');
+  });
+}
+
+if (goToRatingsButton) {
+  goToRatingsButton.addEventListener('click', () => {
+    history.pushState({}, '', '#ratings');
+    showMainView('ratings');
+  });
+}
+
+if (profilesAddRatingButton) {
+  profilesAddRatingButton.addEventListener('click', () => {
+    history.pushState({}, '', '#ratings');
     showMainView('ratings');
   });
 }
@@ -3458,12 +3533,21 @@ window.addEventListener('popstate', () => {
     showProfilePage(true, { requireAdminAccess: true });
     return;
   }
+  if (hash === '#profiles') {
+    showMainView('profiles');
+    return;
+  }
   if (hash === '#ratings') {
     showMainView('ratings');
     return;
   }
 
-  showMainView('profiles');
+  if (hash === '#dashboard') {
+    showMainView('dashboard');
+    return;
+  }
+
+  showMainView('dashboard');
 });
 
 if (!localStorage.getItem(ADMIN_ACCESS_PASSWORD_KEY)) {
@@ -3494,10 +3578,14 @@ if (window.location.hash === '#admin-settings') {
   showAdminPage(true);
 } else if (window.location.hash === '#add-profile') {
   showProfilePage(true, { requireAdminAccess: true });
+} else if (window.location.hash === '#profiles') {
+  showMainView('profiles');
 } else if (window.location.hash === '#ratings') {
   showMainView('ratings');
+} else if (window.location.hash === '#dashboard') {
+  showMainView('dashboard');
 } else {
-  showMainView('profiles');
+  showMainView('dashboard');
 }
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
