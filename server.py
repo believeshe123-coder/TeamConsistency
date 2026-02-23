@@ -297,7 +297,7 @@ def save_admin_value(connection: sqlite3.Connection, key: str, value) -> None:
 def validate_allowed_rating_values(connection: sqlite3.Connection, payload: dict) -> str | None:
     category = str(payload.get('category', '')).strip()
     allowed_job_types = load_admin_list(connection, 'job_types')
-    if allowed_job_types and category.lower() not in {item.lower() for item in allowed_job_types}:
+    if category and allowed_job_types and category.lower() not in {item.lower() for item in allowed_job_types}:
         return f'category must be one of the admin-defined job types: {", ".join(allowed_job_types)}'
 
     selected_criteria = payload.get('selectedCriteria', [])
@@ -324,7 +324,6 @@ def validate_rating_payload(payload: dict, require_worker_name: bool = False) ->
         if len(worker_name) < 2:
             return 'workerName is required and must be at least 2 characters'
 
-    category = str(payload.get('category', '')).strip()
     reviewer = str(payload.get('reviewer', '')).strip()
 
     try:
@@ -332,8 +331,6 @@ def validate_rating_payload(payload: dict, require_worker_name: bool = False) ->
     except (TypeError, ValueError):
         score = None
 
-    if not category:
-        return 'Missing required field: category'
     if score is None or score < -5 or score > 5:
         return 'score must be a number between -5 and 5'
     if not reviewer:
