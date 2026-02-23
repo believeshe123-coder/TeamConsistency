@@ -1350,8 +1350,8 @@ const buildProfileCardMarkup = (profile, options = {}) => {
         ${rankText ? `<span class="rank-chip" aria-label="Worker rank">${rankText}</span>` : ''}
         <span>Rated: ${ratings.length} time(s)</span>
       </div>
-      <p class="hint">Top categories: ${topCategories}</p>
-      <p class="hint">Worst categories: ${worstCategories}</p>
+      <p class="hint top-categories-line" title="Top categories: ${topCategories}">Top categories: ${topCategories}</p>
+      <p class="hint worst-categories-line" title="Worst categories: ${worstCategories}">Worst categories: ${worstCategories}</p>
       <div class="row-actions"><button type="button" class="secondary" data-edit-profile-id="${profile.id}">Edit</button></div>
     `;
   }
