@@ -41,21 +41,64 @@
               <button type="button" id="refresh-profiles" class="secondary">Refresh</button>
             </div>
           </div>
-          <p class="hint">Quick view: top 5 performers on the left and bottom 5 (needs attention) on the right.</p>
+          <details class="dashboard-filter-details" open>
+            <summary>Dashboard Filters (hide/show)</summary>
+            <div class="dashboard-directory-controls" role="group" aria-label="Dashboard worker filters">
+              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-top" checked /> See top performers</label>
+              <label class="dashboard-filter-line">Count
+                <input id="dashboard-top-count" type="number" min="1" max="25" value="5" />
+              </label>
+
+              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-bottom" checked /> See bottom performers</label>
+              <label class="dashboard-filter-line">Count
+                <input id="dashboard-bottom-count" type="number" min="1" max="25" value="5" />
+              </label>
+
+              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-most-consistent" /> See most consistent</label>
+              <label class="dashboard-filter-line">Count
+                <input id="dashboard-most-consistent-count" type="number" min="1" max="25" value="5" />
+              </label>
+
+              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-least-consistent" /> See least consistent</label>
+              <label class="dashboard-filter-line">Count
+                <input id="dashboard-least-consistent-count" type="number" min="1" max="25" value="5" />
+              </label>
+
+              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-enable-min-reviews" /> Don't show anyone under this many reviews</label>
+              <label class="dashboard-filter-line">Reviews
+                <input id="dashboard-min-reviews" type="number" min="0" max="50" value="3" />
+              </label>
+            </div>
+          </details>
+          <p class="hint">Use filters above to choose exactly which lists appear below.</p>
           <div class="dashboard-split-grid">
-            <section class="directory-band">
+            <section class="directory-band" id="dashboard-top-band">
               <div class="directory-band-header">
                 <h3>Top 5 Performers</h3>
                 <span class="hint">Highest ranked now</span>
               </div>
               <ul id="top-performers" class="profiles top-performers-list"></ul>
             </section>
-            <section class="directory-band directory-band-risk">
+            <section class="directory-band directory-band-consistent" id="dashboard-most-consistent-band">
+              <div class="directory-band-header consistent-workers-header">
+                <h3>Most Consistent</h3>
+                <span class="hint">Highest consistency score</span>
+              </div>
+              <ul id="most-consistent-performers" class="profiles top-performers-list"></ul>
+            </section>
+            <section class="directory-band directory-band-risk" id="dashboard-bottom-band">
               <div class="directory-band-header bad-workers-header">
                 <h3>Bottom 5 (Needs Attention)</h3>
                 <span class="hint">Lowest ranked now</span>
               </div>
               <ul id="profiles" class="profiles bottom-performers-list"></ul>
+            </section>
+            <section class="directory-band directory-band-risk" id="dashboard-least-consistent-band">
+              <div class="directory-band-header least-consistent-workers-header">
+                <h3>Least Consistent</h3>
+                <span class="hint">Lowest consistency score</span>
+              </div>
+              <ul id="least-consistent-performers" class="profiles bottom-performers-list"></ul>
             </section>
           </div>
         </section>
@@ -73,19 +116,41 @@
           <section class="card sticky-search-card">
             <h2>Worker Search</h2>
             <label>
-              <span class="label-text">Search by name</span>
-              <input id="worker-search-name" type="search" placeholder="Search by worker name" />
+              <span class="label-text">Search text</span>
+              <input id="worker-search-name" type="search" placeholder="Search workers" />
             </label>
             <div class="field-grid worker-search-grid">
+              <fieldset class="search-mode-checklist">
+                <legend class="label-text">Show only</legend>
+                <label><input type="checkbox" name="worker-search-mode" value="all" /> All workers (ranked)</label>
+                <label><input type="checkbox" name="worker-search-mode" value="top" checked /> Top profiles</label>
+                <label><input type="checkbox" name="worker-search-mode" value="top-min-reviews" /> Top performers (3+ reviews)</label>
+                <label><input type="checkbox" name="worker-search-mode" value="bad" checked /> Needs attention</label>
+                <label><input type="checkbox" name="worker-search-mode" value="best-category" /> Best in each category</label>
+                <label><input type="checkbox" name="worker-search-mode" value="consistent" /> Most consistent</label>
+              </fieldset>
               <label>
-                <span class="label-text">List</span>
-                <select id="worker-search-mode">
-                  <option value="all">All workers</option>
-                  <option value="top">Top profiles</option>
-                  <option value="bad">Needs attention</option>
-                  <option value="best-category">Best in each category</option>
-                  <option value="consistent">Most consistent</option>
+                <span class="label-text">Search in</span>
+                <select id="worker-search-scope">
+                  <option value="all" selected>Name, employee ID, notes, ratings</option>
+                  <option value="name">Name only</option>
+                  <option value="employee-id">Employee ID only</option>
+                  <option value="notes">Notes/history only</option>
+                  <option value="ratings">Rating notes only</option>
                 </select>
+              </label>
+              <label>
+                <span class="label-text">Performance tier</span>
+                <select id="worker-search-performance">
+                  <option value="">Any tier</option>
+                  <option value="top-performer">Reliable / Elite</option>
+                  <option value="steady">Solid / Steady</option>
+                  <option value="at-risk">Needs support / Critical risk</option>
+                </select>
+              </label>
+              <label>
+                <span class="label-text">Minimum reviews</span>
+                <input id="worker-search-min-reviews" type="number" min="0" max="100" value="0" />
               </label>
               <label>
                 <span class="label-text">Job type (admin list)</span>
@@ -104,6 +169,7 @@
               <span class="label-text">Worker</span>
               <select id="worker-selector" aria-label="Select worker profile"></select>
             </label>
+            <p class="hint">You can now search by name, employee ID, notes/history, rating notes, performance tier, and minimum reviews.</p>
             <p class="hint">Quick add worker: type a name below to add them to the system (name only).</p>
             <div class="quick-worker-add">
               <input id="quick-worker-name" type="text" placeholder="Add worker by name" minlength="2" />
