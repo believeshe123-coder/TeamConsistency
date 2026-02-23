@@ -772,6 +772,25 @@ const cleanFrontEndDisplayText = (text) => String(text || '')
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
 
+const isQuotaExceededError = (error) => {
+  if (!error) return false;
+  if (error?.name === 'QuotaExceededError' || error?.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true;
+  return error?.code === 22 || error?.code === 1014;
+};
+
+const safeLocalStorageSetItem = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    if (isQuotaExceededError(error)) {
+      console.warn(`Skipping localStorage write for ${key}; browser storage quota exceeded.`);
+      return false;
+    }
+    throw error;
+  }
+};
+
 const captureStateSnapshot = () => ({
   profiles: deepClone(profilesCache || []),
   adminSettings: deepClone(adminSettings || {}),
@@ -782,7 +801,29 @@ const captureStateSnapshot = () => ({
 const snapshotsEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 const saveChangeLog = () => {
-  localStorage.setItem(CHANGE_LOG_KEY, JSON.stringify({ entries: changeLogEntries, cursor: changeLogCursor }));
+  let entriesToPersist = Array.isArray(changeLogEntries) ? [...changeLogEntries] : [];
+
+  while (true) {
+    const cursorToPersist = Math.max(-1, Math.min(changeLogCursor, entriesToPersist.length - 1));
+    const payload = JSON.stringify({ entries: entriesToPersist, cursor: cursorToPersist });
+    if (safeLocalStorageSetItem(CHANGE_LOG_KEY, payload)) {
+      if (entriesToPersist.length !== changeLogEntries.length) {
+        changeLogEntries = entriesToPersist;
+        changeLogCursor = cursorToPersist;
+      }
+      return;
+    }
+
+    if (!entriesToPersist.length) {
+      changeLogEntries = [];
+      changeLogCursor = -1;
+      safeLocalStorageSetItem(CHANGE_LOG_KEY, JSON.stringify({ entries: [], cursor: -1 }));
+      return;
+    }
+
+    const nextLength = Math.floor(entriesToPersist.length * 0.75);
+    entriesToPersist = entriesToPersist.slice(-Math.max(0, nextLength));
+  }
 };
 
 const loadChangeLog = () => {
