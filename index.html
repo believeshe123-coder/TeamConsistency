@@ -120,7 +120,7 @@
 
         <section class="card">
           <h2>1) Add a New Rating</h2>
-          <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>. Fill worker details, score at least one checklist item, and save.</p>
+          <p class="hint">Required fields are marked <span class="required-indicator" aria-hidden="true">*</span>. Only worker name is required; add job type, daily outcome, or checklist details when available.</p>
           <form id="rating-form">
             <div class="field-grid rating-primary-fields">
               <label>
@@ -135,20 +135,18 @@
               </label>
 
               <label>
-                <span class="label-text">Job type <span class="required-indicator" aria-hidden="true">*</span></span>
-                <select id="job-type" name="jobType" required aria-describedby="job-type-error"></select>
-                <span id="job-type-error" class="field-error">Select a job type before saving.</span>
+                <span class="label-text">Job type (optional)</span>
+                <select id="job-type" name="jobType"></select>
               </label>
 
               <label>
-                <span class="label-text">Daily work outcome <span class="required-indicator" aria-hidden="true">*</span></span>
-                <select id="daily-outcome" name="dailyOutcome" required aria-describedby="daily-outcome-error">
+                <span class="label-text">Daily work outcome (optional)</span>
+                <select id="daily-outcome" name="dailyOutcome">
                   <option value="">Select outcome</option>
                   <option value="declined">Declined work offered (4/10)</option>
                   <option value="worked">Worked (5/10)</option>
                   <option value="repeated">Worked and was requested back (6/10)</option>
                 </select>
-                <span id="daily-outcome-error" class="field-error">Select a daily work outcome before saving.</span>
               </label>
             </div>
 

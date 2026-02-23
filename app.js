@@ -2574,7 +2574,7 @@ form.addEventListener('submit', async (event) => {
 
   if (!Number.isFinite(rating.score)) {
     // eslint-disable-next-line no-alert
-    alert('Select a daily work outcome to create a rating.');
+    alert('Choose a daily work outcome or score at least one checklist item to create a rating.');
     return;
   }
 
