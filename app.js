@@ -142,10 +142,18 @@ const performanceTierLabel = (tenPointScore) => {
   return 'Critical risk';
 };
 
+const activeScoreScalePill = (tenPointScore) => {
+  if (tenPointScore >= 9) return { range: '9–10', label: 'Elite' };
+  if (tenPointScore >= 7) return { range: '7–8.9', label: 'Reliable' };
+  if (tenPointScore >= 5) return { range: '5–6.9', label: 'Solid' };
+  if (tenPointScore >= 4) return { range: '4–4.9', label: 'Needs support' };
+  return { range: '1–3.9', label: 'Critical risk' };
+};
+
 const computeProfileAnalytics = (ratings) => {
   if (!ratings.length) {
     return {
-      normalizedOverallScore: 0,
+      normalizedOverallScore: 2.5,
       consistencyScore: 0,
       currentPositiveStreak: 0,
       bestPositiveStreak: 0,
@@ -241,7 +249,7 @@ const upsertLocalProfile = (incomingProfile) => {
 
 const statusFromScore = (score) => {
   const tenPointScore = toTenPointScale(score);
-  if (tenPointScore >= 6) return 'top-performer';
+  if (tenPointScore >= 7) return 'top-performer';
   if (tenPointScore <= 4) return 'at-risk';
   return 'steady';
 };
@@ -1266,8 +1274,8 @@ const matchesProfileSearch = (profile, rawTerm) => {
 
 const buildProfileCardMarkup = (profile, options = {}) => {
   const { condensed = false, rankPosition = null, totalWorkers = null } = options;
-  const badgeClass = profile.ratings.length ? statusFromScore(profile.overallScore) : 'steady';
-  const badgeLabel = profile.ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+  const badgeClass = statusFromScore(profile.overallScore);
+  const badgeLabel = statusLabelFromClass(badgeClass);
   const latestNote = profile.profileNotes?.length ? profile.profileNotes[profile.profileNotes.length - 1] : null;
 
   if (condensed) {
@@ -1277,26 +1285,20 @@ const buildProfileCardMarkup = (profile, options = {}) => {
     const jobTypeSummary = summarizeJobTypeScores(ratings);
     const topCategories = jobTypeSummary.slice(0, 2).map((entry) => entry.jobType).join(', ') || '—';
     const worstCategories = [...jobTypeSummary].reverse().slice(0, 2).map((entry) => entry.jobType).join(', ') || '—';
-    const scoreScalePills = [
-      { range: '9–10', label: 'Elite', active: tenPointScore >= 9 },
-      { range: '7–8.9', label: 'Reliable', active: tenPointScore >= 7 && tenPointScore < 9 },
-      { range: '5–6.9', label: 'Solid', active: tenPointScore >= 5 && tenPointScore < 7 },
-      { range: '4–4.9', label: 'Needs support', active: tenPointScore >= 4 && tenPointScore < 5 },
-      { range: '1–3.9', label: 'Critical risk', active: tenPointScore < 4 },
-    ];
+    const scorePill = activeScoreScalePill(tenPointScore);
 
     return `
       <div class="profile-item-head">
         <strong>${profile.name}</strong>
-        <span class="badge ${badgeClass}">${badgeLabel}</span>
+        <span class="badge ${badgeClass}">${performanceTierLabel(tenPointScore)}</span>
       </div>
       <div class="meta compact-meta">
         <span>Worker score scale (1-10): ${tenPointScore}</span>
         <span>Consistent for: ${computeConsistentDays(profile)} day(s)</span>
       </div>
-      <div class="score-pill-list" aria-label="Worker score scale tiers">${scoreScalePills
-        .map((entry) => `<span class="badge score-pill ${entry.active ? 'score-pill-active' : 'score-pill-muted'}"><b>${entry.range}</b> ${entry.label}</span>`)
-        .join('')}</div>
+      <div class="score-pill-list" aria-label="Worker score scale tier">
+        <span class="badge score-pill score-pill-active"><b>${scorePill.range}</b> ${scorePill.label}</span>
+      </div>
       <div class="meta compact-meta">
         ${rankText ? `<span class="rank-chip" aria-label="Worker rank">${rankText}</span>` : ''}
         <span>Rated: ${ratings.length} time(s)</span>
@@ -1670,12 +1672,13 @@ const renderWorkerProfile = (profiles, workerId) => {
         .join('')
     : '<tr><td colspan="4">No job type scores yet.</td></tr>';
 
-  const badgeClass = ratings.length ? statusFromScore(profile.overallScore) : 'steady';
-  const badgeLabel = ratings.length ? statusLabelFromClass(badgeClass) : 'Unrated';
+  const badgeClass = statusFromScore(profile.overallScore);
+  const badgeLabel = statusLabelFromClass(badgeClass);
   const sortedByRank = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
   const rankPosition = Math.max(1, sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1);
   const totalWorkers = sortedByRank.length;
   const scoreTitle = performanceTierLabel(toTenPointScale(overallScore));
+  const scorePill = activeScoreScalePill(toTenPointScale(overallScore));
   workerProfileDetail.innerHTML = `
     <div class="profile-detail-header">
       <h3>${profile.name}</h3>
@@ -1707,6 +1710,9 @@ const renderWorkerProfile = (profiles, workerId) => {
         <span>Positive streak: ${analytics.currentPositiveStreak || 0}</span>
         <span>${analytics.lateTrend || 'No punctuality trend yet'}</span>
         <span class="badge ${badgeClass}">${badgeLabel}</span>
+      </div>
+      <div class="score-pill-list" aria-label="Worker score scale tier">
+        <span class="badge score-pill score-pill-active"><b>${scorePill.range}</b> ${scorePill.label}</span>
       </div>
       <div class="meta">
         <span>Issue tags:</span>
