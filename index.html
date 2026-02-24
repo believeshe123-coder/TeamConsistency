@@ -16,23 +16,6 @@
       </div>
 
       <section id="dashboard-page">
-        <header>
-          <h1>Worker Dashboard</h1>
-          <p>Monitor team performance and quickly flag workers who need support.</p>
-          <div class="section-actions page-cta-actions">
-            <button type="button" id="go-to-profiles" class="secondary">Go to Worker Profiles</button>
-            <button type="button" id="go-to-ratings" class="secondary">Add New Rating</button>
-          </div>
-          <div class="score-scale-guide" role="note" aria-label="Worker score scale guide">
-            <strong>Worker score scale (1–10):</strong>
-            <span><b>9–10:</b> Elite</span>
-            <span><b>7–8.9:</b> Reliable</span>
-            <span><b>5–6.9:</b> Solid (average range starts at 5)</span>
-            <span><b>4–4.9:</b> Needs support</span>
-            <span><b>1–3.9:</b> Critical risk</span>
-          </div>
-        </header>
-
         <section class="card">
           <div class="section-header">
             <h2>Worker Directory</h2>
@@ -43,32 +26,61 @@
             </div>
           </div>
           <details class="dashboard-filter-details" open>
-            <summary>Dashboard Filters (hide/show)</summary>
+            <summary>Dashboard Filters</summary>
             <div class="dashboard-directory-controls" role="group" aria-label="Dashboard worker filters">
-              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-top" checked /> See top performers</label>
-              <label class="dashboard-filter-line">Count
-                <input id="dashboard-top-count" type="number" min="1" max="25" value="5" />
-              </label>
+              <p class="dashboard-filter-help">Choose which dashboard sections appear and how many workers each section shows.</p>
 
-              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-bottom" checked /> See bottom performers</label>
-              <label class="dashboard-filter-line">Count
-                <input id="dashboard-bottom-count" type="number" min="1" max="25" value="5" />
-              </label>
+              <fieldset class="dashboard-filter-group">
+                <legend>Sections to show</legend>
 
-              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-most-consistent" /> See most consistent</label>
-              <label class="dashboard-filter-line">Count
-                <input id="dashboard-most-consistent-count" type="number" min="1" max="25" value="5" />
-              </label>
+                <div class="dashboard-filter-row">
+                  <label class="dashboard-filter-toggle"><input type="checkbox" id="dashboard-show-top" checked /> Top performers</label>
+                  <label class="dashboard-filter-count">Count
+                    <input id="dashboard-top-count" type="number" min="1" max="25" value="5" />
+                  </label>
+                  <label class="dashboard-filter-count">Min reviews
+                    <input id="dashboard-top-min-reviews" type="number" min="0" max="50" value="0" />
+                  </label>
+                </div>
 
-              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-show-least-consistent" /> See least consistent</label>
-              <label class="dashboard-filter-line">Count
-                <input id="dashboard-least-consistent-count" type="number" min="1" max="25" value="5" />
-              </label>
+                <div class="dashboard-filter-row">
+                  <label class="dashboard-filter-toggle"><input type="checkbox" id="dashboard-show-bottom" checked /> Bottom performers</label>
+                  <label class="dashboard-filter-count">Count
+                    <input id="dashboard-bottom-count" type="number" min="1" max="25" value="5" />
+                  </label>
+                  <label class="dashboard-filter-count">Min reviews
+                    <input id="dashboard-bottom-min-reviews" type="number" min="0" max="50" value="0" />
+                  </label>
+                </div>
 
-              <label class="dashboard-filter-line"><input type="checkbox" id="dashboard-enable-min-reviews" /> Don't show anyone under this many reviews</label>
-              <label class="dashboard-filter-line">Reviews
-                <input id="dashboard-min-reviews" type="number" min="0" max="50" value="3" />
-              </label>
+                <div class="dashboard-filter-row">
+                  <label class="dashboard-filter-toggle"><input type="checkbox" id="dashboard-show-most-consistent" /> Most consistent</label>
+                  <label class="dashboard-filter-count">Count
+                    <input id="dashboard-most-consistent-count" type="number" min="1" max="25" value="5" />
+                  </label>
+                  <label class="dashboard-filter-count">Min reviews
+                    <input id="dashboard-most-consistent-min-reviews" type="number" min="0" max="50" value="0" />
+                  </label>
+                </div>
+
+                <div class="dashboard-filter-row">
+                  <label class="dashboard-filter-toggle"><input type="checkbox" id="dashboard-show-least-consistent" /> Least consistent</label>
+                  <label class="dashboard-filter-count">Count
+                    <input id="dashboard-least-consistent-count" type="number" min="1" max="25" value="5" />
+                  </label>
+                  <label class="dashboard-filter-count">Min reviews
+                    <input id="dashboard-least-consistent-min-reviews" type="number" min="0" max="50" value="0" />
+                  </label>
+                </div>
+              </fieldset>
+
+
+              <div class="section-actions dashboard-filter-presets">
+                <button type="button" id="dashboard-preset-balanced" class="secondary">Balanced</button>
+                <button type="button" id="dashboard-preset-top-only" class="secondary">Top only</button>
+                <button type="button" id="dashboard-preset-attention-only" class="secondary">Needs attention only</button>
+                <button type="button" id="dashboard-preset-reset" class="secondary">Reset</button>
+              </div>
             </div>
           </details>
           <p class="hint">Use filters above to choose exactly which lists appear below. Click “Set current selection as refresh default” to make Refresh restore this setup.</p>

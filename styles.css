@@ -104,7 +104,6 @@ h2 {
   display: none !important;
 }
 
-#dashboard-page > header,
 #profiles-page > header,
 #ratings-page > header {
   grid-column: 1 / -1;
@@ -114,31 +113,15 @@ h2 {
   background: #ced2df;
 }
 
-
-.score-scale-guide {
-  margin-top: 8px;
-  padding: 6px 8px;
-  border: 1px solid #7e87a3;
-  background: linear-gradient(#eef2fb, #dce2f2);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  align-items: center;
-  font-size: 12px;
+#dashboard-page > .card {
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--border);
 }
 
-.score-scale-guide strong {
-  color: #1c2d55;
-}
-
-#dashboard-page > .card,
 #ratings-page > .card {
   grid-column: 1;
   grid-row: 2;
-}
-
-#dashboard-page > .card {
-  border-right: 1px solid var(--border);
 }
 
 #profiles-page .right-column-stack,
@@ -600,22 +583,68 @@ select:user-invalid {
 .dashboard-directory-controls {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 6px 10px;
+  gap: 8px;
   padding: 8px;
   border: 1px solid #97a0b7;
   background: #f6f8ff;
 }
 
-.dashboard-filter-line {
+.dashboard-filter-help {
+  margin: 0;
+  font-size: 12px;
+  color: #3a4358;
+}
+
+.dashboard-filter-group {
+  margin: 0;
+  border: 1px solid #aab3ca;
+  padding: 6px;
+  display: grid;
+  gap: 6px;
+  background: #f8faff;
+}
+
+.dashboard-filter-group legend {
+  padding: 0 4px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #2d3550;
+}
+
+.dashboard-filter-row {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.dashboard-filter-toggle {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
 }
 
-.dashboard-filter-line input[type='number'] {
-  width: 68px;
+.dashboard-filter-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dashboard-filter-count input[type='number'] {
+  width: 60px;
+}
+
+.dashboard-filter-presets {
+  justify-content: flex-start;
+}
+
+.dashboard-filter-presets button {
+  margin-top: 0;
 }
 
 .all-workers-header .hint {
