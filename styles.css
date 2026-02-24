@@ -579,6 +579,45 @@ select:user-invalid {
   border: 1px solid #8892ae;
 }
 
+.dashboard-filter-details {
+  margin: 6px 0 8px;
+  border: 1px solid #97a0b7;
+  background: #f6f8ff;
+}
+
+.dashboard-filter-details > summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  font-weight: 700;
+  background: #e8eefc;
+  border-bottom: 1px solid #97a0b7;
+}
+
+.dashboard-filter-details[open] > summary {
+  margin-bottom: 0;
+}
+
+.dashboard-directory-controls {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 10px;
+  padding: 8px;
+  border: 1px solid #97a0b7;
+  background: #f6f8ff;
+}
+
+.dashboard-filter-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.dashboard-filter-line input[type='number'] {
+  width: 68px;
+}
+
 .all-workers-header .hint {
   color: #404a62;
 }
@@ -594,6 +633,26 @@ select:user-invalid {
   color: #ffe9d5;
 }
 
+.consistent-workers-header {
+  background: linear-gradient(90deg, #3d7abf, #24578e);
+  border-bottom: 1px solid #1f4975;
+  color: #edf4ff;
+}
+
+.consistent-workers-header .hint {
+  color: #d9e9ff;
+}
+
+.least-consistent-workers-header {
+  background: linear-gradient(90deg, #805790, #5f3e6f);
+  border-bottom: 1px solid #4e335b;
+  color: #f5ecfa;
+}
+
+.least-consistent-workers-header .hint {
+  color: #eddcf7;
+}
+
 .at-risk-preview {
   border-color: #a98972;
   background: linear-gradient(#fff8f1, #f5e6d8);
@@ -601,6 +660,29 @@ select:user-invalid {
 
 .worker-search-grid {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.search-mode-checklist {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #97a0b7;
+  background: #f6f8ff;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(170px, 1fr));
+  gap: 4px 10px;
+  align-content: start;
+}
+
+.search-mode-checklist legend {
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.search-mode-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
 }
 
 #worker-search-results {
@@ -801,7 +883,9 @@ select:user-invalid {
 .history-list,
 .criteria-list {
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(170px, 1fr));
+  gap: 4px 10px;
+  align-content: start;
 }
 
 .entry-row {

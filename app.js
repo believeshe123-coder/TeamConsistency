@@ -21,8 +21,25 @@ const profileHistoryList = document.getElementById('profile-history-list');
 const profileNotesList = document.getElementById('profile-notes-list');
 const profilesList = document.getElementById('profiles');
 const topPerformersList = document.getElementById('top-performers');
+const dashboardShowTopInput = document.getElementById('dashboard-show-top');
+const dashboardTopCountInput = document.getElementById('dashboard-top-count');
+const dashboardShowBottomInput = document.getElementById('dashboard-show-bottom');
+const dashboardBottomCountInput = document.getElementById('dashboard-bottom-count');
+const dashboardEnableMinReviewsInput = document.getElementById('dashboard-enable-min-reviews');
+const dashboardMinReviewsInput = document.getElementById('dashboard-min-reviews');
+const dashboardShowMostConsistentInput = document.getElementById('dashboard-show-most-consistent');
+const dashboardMostConsistentCountInput = document.getElementById('dashboard-most-consistent-count');
+const dashboardShowLeastConsistentInput = document.getElementById('dashboard-show-least-consistent');
+const dashboardLeastConsistentCountInput = document.getElementById('dashboard-least-consistent-count');
+const dashboardTopBand = document.getElementById('dashboard-top-band');
+const dashboardBottomBand = document.getElementById('dashboard-bottom-band');
+const dashboardMostConsistentBand = document.getElementById('dashboard-most-consistent-band');
+const dashboardLeastConsistentBand = document.getElementById('dashboard-least-consistent-band');
+const mostConsistentPerformersList = document.getElementById('most-consistent-performers');
+const leastConsistentPerformersList = document.getElementById('least-consistent-performers');
 const clearButton = document.getElementById('clear-data');
 const refreshProfilesButton = document.getElementById('refresh-profiles');
+const saveRefreshDefaultsButton = document.getElementById('save-refresh-defaults');
 const dataSyncStatus = document.getElementById('data-sync-status');
 const jobTypeSelect = document.getElementById('job-type');
 const workerSelector = document.getElementById('worker-selector');
@@ -84,7 +101,10 @@ const downloadBrowserBackupButton = document.getElementById('download-browser-ba
 const restoreBrowserBackupInput = document.getElementById('restore-browser-backup');
 const profileSearchInput = document.getElementById('profile-search');
 const workerSearchNameInput = document.getElementById('worker-search-name');
-const workerSearchModeSelect = document.getElementById('worker-search-mode');
+const workerSearchModeInputs = [...document.querySelectorAll('input[name="worker-search-mode"]')];
+const workerSearchScopeSelect = document.getElementById('worker-search-scope');
+const workerSearchPerformanceSelect = document.getElementById('worker-search-performance');
+const workerSearchMinReviewsInput = document.getElementById('worker-search-min-reviews');
 const workerSearchJobTypeSelect = document.getElementById('worker-search-job-type');
 const workerSearchCriterionSelect = document.getElementById('worker-search-criterion');
 const workerSearchResetButton = document.getElementById('worker-search-reset');
@@ -106,6 +126,7 @@ let isApplyingChangeLogState = false;
 let lastPrimaryView = 'dashboard';
 
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
+const FILTER_DEFAULTS_KEY = 'worker-refresh-filter-defaults-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
 const nowIso = () => new Date().toISOString();
@@ -258,6 +279,89 @@ const statusFromScore = (score) => {
   if (tenPointScore >= 7) return 'top-performer';
   if (tenPointScore <= 4) return 'at-risk';
   return 'steady';
+};
+
+const getSelectedWorkerSearchModes = () => {
+  const selected = workerSearchModeInputs
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+
+  return selected.length ? selected : ['all'];
+};
+
+const applyDefaultWorkerSearchModes = () => {
+  const defaults = new Set(['top', 'bad']);
+  workerSearchModeInputs.forEach((input) => {
+    input.checked = defaults.has(input.value);
+  });
+};
+
+const captureCurrentRefreshDefaults = () => ({
+  dashboard: {
+    showTop: Boolean(dashboardShowTopInput?.checked),
+    topCount: clamp(Number(dashboardTopCountInput?.value || 5), 1, 25),
+    showBottom: Boolean(dashboardShowBottomInput?.checked),
+    bottomCount: clamp(Number(dashboardBottomCountInput?.value || 5), 1, 25),
+    showMostConsistent: Boolean(dashboardShowMostConsistentInput?.checked),
+    mostConsistentCount: clamp(Number(dashboardMostConsistentCountInput?.value || 5), 1, 25),
+    showLeastConsistent: Boolean(dashboardShowLeastConsistentInput?.checked),
+    leastConsistentCount: clamp(Number(dashboardLeastConsistentCountInput?.value || 5), 1, 25),
+    minReviewsEnabled: Boolean(dashboardEnableMinReviewsInput?.checked),
+    minReviews: clamp(Number(dashboardMinReviewsInput?.value || 0), 0, 50),
+  },
+  workerSearch: {
+    name: String(workerSearchNameInput?.value || ''),
+    modes: workerSearchModeInputs.filter((input) => input.checked).map((input) => input.value),
+    scope: workerSearchScopeSelect?.value || 'all',
+    performance: workerSearchPerformanceSelect?.value || '',
+    minReviews: clamp(Number(workerSearchMinReviewsInput?.value || 0), 0, 100),
+    jobType: workerSearchJobTypeSelect?.value || '',
+    criterion: workerSearchCriterionSelect?.value || '',
+  },
+});
+
+const loadSavedRefreshDefaults = () => {
+  try {
+    return JSON.parse(localStorage.getItem(FILTER_DEFAULTS_KEY) || 'null');
+  } catch {
+    return null;
+  }
+};
+
+const applySavedRefreshDefaults = () => {
+  const saved = loadSavedRefreshDefaults();
+  if (!saved) {
+    applyDefaultWorkerSearchModes();
+    return;
+  }
+
+  const dashboard = saved.dashboard || {};
+  if (dashboardShowTopInput) dashboardShowTopInput.checked = Boolean(dashboard.showTop);
+  if (dashboardTopCountInput) dashboardTopCountInput.value = String(clamp(Number(dashboard.topCount || 5), 1, 25));
+  if (dashboardShowBottomInput) dashboardShowBottomInput.checked = Boolean(dashboard.showBottom);
+  if (dashboardBottomCountInput) dashboardBottomCountInput.value = String(clamp(Number(dashboard.bottomCount || 5), 1, 25));
+  if (dashboardShowMostConsistentInput) dashboardShowMostConsistentInput.checked = Boolean(dashboard.showMostConsistent);
+  if (dashboardMostConsistentCountInput) dashboardMostConsistentCountInput.value = String(clamp(Number(dashboard.mostConsistentCount || 5), 1, 25));
+  if (dashboardShowLeastConsistentInput) dashboardShowLeastConsistentInput.checked = Boolean(dashboard.showLeastConsistent);
+  if (dashboardLeastConsistentCountInput) dashboardLeastConsistentCountInput.value = String(clamp(Number(dashboard.leastConsistentCount || 5), 1, 25));
+  if (dashboardEnableMinReviewsInput) dashboardEnableMinReviewsInput.checked = Boolean(dashboard.minReviewsEnabled);
+  if (dashboardMinReviewsInput) dashboardMinReviewsInput.value = String(clamp(Number(dashboard.minReviews || 0), 0, 50));
+
+  const workerSearch = saved.workerSearch || {};
+  if (workerSearchNameInput) workerSearchNameInput.value = String(workerSearch.name || '');
+  const modes = Array.isArray(workerSearch.modes) && workerSearch.modes.length ? new Set(workerSearch.modes) : new Set(['top', 'bad']);
+  workerSearchModeInputs.forEach((input) => {
+    input.checked = modes.has(input.value);
+  });
+  if (workerSearchScopeSelect) workerSearchScopeSelect.value = workerSearch.scope || 'all';
+  if (workerSearchPerformanceSelect) workerSearchPerformanceSelect.value = workerSearch.performance || '';
+  if (workerSearchMinReviewsInput) workerSearchMinReviewsInput.value = String(clamp(Number(workerSearch.minReviews || 0), 0, 100));
+  if (workerSearchJobTypeSelect) workerSearchJobTypeSelect.value = workerSearch.jobType || '';
+  if (workerSearchCriterionSelect) workerSearchCriterionSelect.value = workerSearch.criterion || '';
+};
+
+const saveCurrentRefreshDefaults = () => {
+  localStorage.setItem(FILTER_DEFAULTS_KEY, JSON.stringify(captureCurrentRefreshDefaults()));
 };
 
 
@@ -1408,6 +1512,34 @@ const profileMatchesJobType = (profile, jobType) => {
   return (profile.ratings || []).some((rating) => String(rating.category || '').toLowerCase() === String(jobType).toLowerCase());
 };
 
+const profileSearchTokens = (profile) => {
+  const ratingNotes = (profile.ratings || []).map((rating) => String(rating.note || '')).join(' ');
+  const noteEntries = (profile.profileNotes || []).map((entry) => String(entry.note || '')).join(' ');
+  const historyEntries = (profile.historyEntries || []).map((entry) => String(entry.note || entry.text || '')).join(' ');
+
+  return {
+    all: [
+      profile.name,
+      profile.externalEmployeeId,
+      ratingNotes,
+      noteEntries,
+      historyEntries,
+      (profile.jobCategories || []).join(' '),
+    ].join(' ').toLowerCase(),
+    name: String(profile.name || '').toLowerCase(),
+    'employee-id': String(profile.externalEmployeeId || '').toLowerCase(),
+    notes: `${noteEntries} ${historyEntries}`.toLowerCase(),
+    ratings: ratingNotes.toLowerCase(),
+  };
+};
+
+const profileMatchesSearchTerm = (profile, term, scope = 'all') => {
+  if (!term) return true;
+  const haystack = profileSearchTokens(profile);
+  const source = haystack[scope] ?? haystack.all;
+  return source.includes(term);
+};
+
 const collectJobTypesFromProfiles = (profiles = []) => {
   const seen = new Set();
 
@@ -1469,63 +1601,158 @@ const renderWorkerSearchFilters = () => {
 const renderProfiles = (profiles) => {
   profilesList.innerHTML = '';
   if (topPerformersList) topPerformersList.innerHTML = '';
+  if (mostConsistentPerformersList) mostConsistentPerformersList.innerHTML = '';
+  if (leastConsistentPerformersList) leastConsistentPerformersList.innerHTML = '';
 
-  const sorted = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
-  if (!sorted.length) {
-    renderPreviewCards(topPerformersList, 'top');
-    renderPreviewCards(profilesList, 'bad');
+  const showTop = Boolean(dashboardShowTopInput?.checked);
+  const showBottom = Boolean(dashboardShowBottomInput?.checked);
+  const showMostConsistent = Boolean(dashboardShowMostConsistentInput?.checked);
+  const showLeastConsistent = Boolean(dashboardShowLeastConsistentInput?.checked);
+  const topCount = clamp(Number(dashboardTopCountInput?.value || 5), 1, 25);
+  const bottomCount = clamp(Number(dashboardBottomCountInput?.value || 5), 1, 25);
+  const mostConsistentCount = clamp(Number(dashboardMostConsistentCountInput?.value || 5), 1, 25);
+  const leastConsistentCount = clamp(Number(dashboardLeastConsistentCountInput?.value || 5), 1, 25);
+  const minReviewsEnabled = Boolean(dashboardEnableMinReviewsInput?.checked);
+  const minReviews = clamp(Number(dashboardMinReviewsInput?.value || 0), 0, 50);
+
+  const sortedByRank = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
+  const eligibleByRank = minReviewsEnabled
+    ? sortedByRank.filter((profile) => (profile.ratings || []).length >= minReviews)
+    : sortedByRank;
+
+  const eligibleWithRatings = eligibleByRank.filter((profile) => (profile.ratings || []).length);
+  const sortedByConsistencyDesc = [...eligibleWithRatings]
+    .sort((a, b) => Number(b.analytics?.consistencyScore || 0) - Number(a.analytics?.consistencyScore || 0));
+  const sortedByConsistencyAsc = [...sortedByConsistencyDesc].reverse();
+
+  if (dashboardTopBand) dashboardTopBand.classList.toggle('hidden', !showTop);
+  if (dashboardBottomBand) dashboardBottomBand.classList.toggle('hidden', !showBottom);
+  if (dashboardMostConsistentBand) dashboardMostConsistentBand.classList.toggle('hidden', !showMostConsistent);
+  if (dashboardLeastConsistentBand) dashboardLeastConsistentBand.classList.toggle('hidden', !showLeastConsistent);
+
+  if (!showTop && !showBottom && !showMostConsistent && !showLeastConsistent) {
+    profilesList.innerHTML = '<li class="profile-item">Select at least one dashboard filter.</li>';
+    if (dashboardBottomBand) dashboardBottomBand.classList.remove('hidden');
     return;
   }
 
-  const topPerformers = sorted.slice(0, 5);
-  const badWorkers = [...sorted].reverse().slice(0, 5);
+  if (!eligibleByRank.length) {
+    if (showTop) renderPreviewCards(topPerformersList, 'top');
+    if (showBottom) renderPreviewCards(profilesList, 'bad');
+    if (showMostConsistent && mostConsistentPerformersList) {
+      mostConsistentPerformersList.innerHTML = '<li class="profile-item">No consistent workers match this filter yet.</li>';
+    }
+    if (showLeastConsistent && leastConsistentPerformersList) {
+      leastConsistentPerformersList.innerHTML = '<li class="profile-item">No consistency history matches this filter yet.</li>';
+    }
+    return;
+  }
 
-  if (topPerformersList) {
+  const topPerformers = showTop ? eligibleByRank.slice(0, topCount) : [];
+  const badWorkers = showBottom ? [...eligibleByRank].reverse().slice(0, bottomCount) : [];
+  const mostConsistentWorkers = showMostConsistent ? sortedByConsistencyDesc.slice(0, mostConsistentCount) : [];
+  const leastConsistentWorkers = showLeastConsistent ? sortedByConsistencyAsc.slice(0, leastConsistentCount) : [];
+
+  if (topPerformersList && showTop) {
     topPerformers.forEach((profile) => {
       const item = document.createElement('li');
       item.className = 'profile-item top-performer-card';
-      const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
-      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sorted.length });
+      const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
       topPerformersList.appendChild(item);
     });
   }
 
-  badWorkers.forEach((profile) => {
-    const item = document.createElement('li');
-    item.className = 'profile-item at-risk-preview';
-    const rankPosition = sorted.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
-    item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sorted.length });
-    profilesList.appendChild(item);
-  });
+  if (showBottom) {
+    badWorkers.forEach((profile) => {
+      const item = document.createElement('li');
+      item.className = 'profile-item at-risk-preview';
+      const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
+      profilesList.appendChild(item);
+    });
+  }
+
+  if (showMostConsistent && mostConsistentPerformersList) {
+    if (!mostConsistentWorkers.length) {
+      mostConsistentPerformersList.innerHTML = '<li class="profile-item">No consistent workers match this filter yet.</li>';
+    } else {
+      mostConsistentWorkers.forEach((profile) => {
+        const item = document.createElement('li');
+        item.className = 'profile-item top-performer-card';
+        const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+        item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
+        mostConsistentPerformersList.appendChild(item);
+      });
+    }
+  }
+
+  if (showLeastConsistent && leastConsistentPerformersList) {
+    if (!leastConsistentWorkers.length) {
+      leastConsistentPerformersList.innerHTML = '<li class="profile-item">No consistency history matches this filter yet.</li>';
+    } else {
+      leastConsistentWorkers.forEach((profile) => {
+        const item = document.createElement('li');
+        item.className = 'profile-item at-risk-preview';
+        const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+        item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
+        leastConsistentPerformersList.appendChild(item);
+      });
+    }
+  }
 };
 
 const renderWorkerSearchResults = (profiles) => {
   if (!workerSearchResults) return;
   workerSearchResults.innerHTML = '';
 
-  const mode = workerSearchModeSelect?.value || 'all';
+  const selectedModes = getSelectedWorkerSearchModes();
   const term = String(workerSearchNameInput?.value || '').trim().toLowerCase();
+  const scope = workerSearchScopeSelect?.value || 'all';
+  const selectedPerformance = workerSearchPerformanceSelect?.value || '';
+  const minReviews = clamp(Number(workerSearchMinReviewsInput?.value || 0), 0, 100);
   const selectedJobType = workerSearchJobTypeSelect?.value || '';
   const selectedCriterion = workerSearchCriterionSelect?.value || '';
 
   const sorted = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
-  let source = sorted;
-
-  if (mode === 'top') source = sorted.slice(0, 8);
-  if (mode === 'bad') source = [...sorted].reverse().slice(0, 8);
-  if (mode === 'consistent') {
-    source = [...sorted]
+  const modeSources = {
+    all: sorted,
+    top: sorted.slice(0, 8),
+    'top-min-reviews': sorted.filter((profile) => (profile.ratings || []).length >= 3).slice(0, 8),
+    bad: [...sorted].reverse().slice(0, 8),
+    consistent: [...sorted]
       .filter((profile) => (profile.ratings || []).length)
       .sort((a, b) => Number(b.analytics?.consistencyScore || 0) - Number(a.analytics?.consistencyScore || 0))
-      .slice(0, 8);
-  }
-  if (mode === 'best-category') {
-    source = getBestPerCategoryProfiles(sorted);
-  }
+      .slice(0, 8),
+    'best-category': getBestPerCategoryProfiles(sorted),
+  };
+
+  const combined = [];
+  const seen = new Set();
+
+  selectedModes.forEach((mode) => {
+    const nextSet = modeSources[mode] || [];
+    nextSet.forEach((profile) => {
+      const key = String(profile.id);
+      if (seen.has(key)) return;
+      seen.add(key);
+      combined.push(profile);
+    });
+  });
+
+  const source = selectedModes.includes('all')
+    ? sorted
+    : combined.sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
 
   const filtered = source.filter((profile) => {
-    const matchesName = !term || String(profile.name || '').toLowerCase().includes(term);
-    return matchesName && profileMatchesJobType(profile, selectedJobType) && profileMatchesCriterion(profile, selectedCriterion);
+    const matchesTerm = profileMatchesSearchTerm(profile, term, scope);
+    const matchesPerformance = !selectedPerformance || statusFromScore(profile.overallScore) === selectedPerformance;
+    const matchesMinReviews = (profile.ratings || []).length >= minReviews;
+    return matchesTerm
+      && matchesPerformance
+      && matchesMinReviews
+      && profileMatchesJobType(profile, selectedJobType)
+      && profileMatchesCriterion(profile, selectedCriterion);
   });
 
   if (!filtered.length) {
@@ -3383,9 +3610,20 @@ if (refreshMaintenanceReportButton) {
 if (refreshProfilesButton) {
   refreshProfilesButton.addEventListener('click', async () => {
     try {
+      applySavedRefreshDefaults();
       await refreshFromBackend();
     } catch {
       // status text already updated in refreshFromBackend
+    }
+  });
+}
+
+
+if (saveRefreshDefaultsButton) {
+  saveRefreshDefaultsButton.addEventListener('click', () => {
+    saveCurrentRefreshDefaults();
+    if (dataSyncStatus) {
+      dataSyncStatus.textContent = 'Saved current filters as refresh defaults.';
     }
   });
 }
@@ -3397,7 +3635,18 @@ if (profileSearchInput) {
   });
 }
 
-[workerSearchNameInput, workerSearchModeSelect, workerSearchJobTypeSelect, workerSearchCriterionSelect]
+[dashboardShowTopInput, dashboardTopCountInput, dashboardShowBottomInput, dashboardBottomCountInput, dashboardShowMostConsistentInput, dashboardMostConsistentCountInput, dashboardShowLeastConsistentInput, dashboardLeastConsistentCountInput, dashboardEnableMinReviewsInput, dashboardMinReviewsInput]
+  .filter(Boolean)
+  .forEach((field) => {
+    field.addEventListener('input', () => {
+      renderProfiles(profilesCache);
+    });
+    field.addEventListener('change', () => {
+      renderProfiles(profilesCache);
+    });
+  });
+
+[workerSearchNameInput, workerSearchScopeSelect, workerSearchPerformanceSelect, workerSearchMinReviewsInput, workerSearchJobTypeSelect, workerSearchCriterionSelect, ...workerSearchModeInputs]
   .filter(Boolean)
   .forEach((field) => {
     field.addEventListener('input', () => {
@@ -3411,7 +3660,10 @@ if (profileSearchInput) {
 if (workerSearchResetButton) {
   workerSearchResetButton.addEventListener('click', () => {
     if (workerSearchNameInput) workerSearchNameInput.value = '';
-    if (workerSearchModeSelect) workerSearchModeSelect.value = 'all';
+    applyDefaultWorkerSearchModes();
+    if (workerSearchScopeSelect) workerSearchScopeSelect.value = 'all';
+    if (workerSearchPerformanceSelect) workerSearchPerformanceSelect.value = '';
+    if (workerSearchMinReviewsInput) workerSearchMinReviewsInput.value = '0';
     if (workerSearchJobTypeSelect) workerSearchJobTypeSelect.value = '';
     if (workerSearchCriterionSelect) workerSearchCriterionSelect.value = '';
     renderWorkerSearchResults(profilesCache);
@@ -3587,6 +3839,7 @@ if (window.location.hash === '#admin-settings') {
 } else {
   showMainView('dashboard');
 }
+applySavedRefreshDefaults();
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });
