@@ -39,6 +39,7 @@ const mostConsistentPerformersList = document.getElementById('most-consistent-pe
 const leastConsistentPerformersList = document.getElementById('least-consistent-performers');
 const clearButton = document.getElementById('clear-data');
 const refreshProfilesButton = document.getElementById('refresh-profiles');
+const saveRefreshDefaultsButton = document.getElementById('save-refresh-defaults');
 const dataSyncStatus = document.getElementById('data-sync-status');
 const jobTypeSelect = document.getElementById('job-type');
 const workerSelector = document.getElementById('worker-selector');
@@ -125,6 +126,7 @@ let isApplyingChangeLogState = false;
 let lastPrimaryView = 'dashboard';
 
 const LOCAL_PROFILES_KEY = 'worker-profiles-local-v1';
+const FILTER_DEFAULTS_KEY = 'worker-refresh-filter-defaults-v1';
 
 const formatTimestamp = (value) => new Date(value).toLocaleString();
 const nowIso = () => new Date().toISOString();
@@ -292,6 +294,74 @@ const applyDefaultWorkerSearchModes = () => {
   workerSearchModeInputs.forEach((input) => {
     input.checked = defaults.has(input.value);
   });
+};
+
+const captureCurrentRefreshDefaults = () => ({
+  dashboard: {
+    showTop: Boolean(dashboardShowTopInput?.checked),
+    topCount: clamp(Number(dashboardTopCountInput?.value || 5), 1, 25),
+    showBottom: Boolean(dashboardShowBottomInput?.checked),
+    bottomCount: clamp(Number(dashboardBottomCountInput?.value || 5), 1, 25),
+    showMostConsistent: Boolean(dashboardShowMostConsistentInput?.checked),
+    mostConsistentCount: clamp(Number(dashboardMostConsistentCountInput?.value || 5), 1, 25),
+    showLeastConsistent: Boolean(dashboardShowLeastConsistentInput?.checked),
+    leastConsistentCount: clamp(Number(dashboardLeastConsistentCountInput?.value || 5), 1, 25),
+    minReviewsEnabled: Boolean(dashboardEnableMinReviewsInput?.checked),
+    minReviews: clamp(Number(dashboardMinReviewsInput?.value || 0), 0, 50),
+  },
+  workerSearch: {
+    name: String(workerSearchNameInput?.value || ''),
+    modes: workerSearchModeInputs.filter((input) => input.checked).map((input) => input.value),
+    scope: workerSearchScopeSelect?.value || 'all',
+    performance: workerSearchPerformanceSelect?.value || '',
+    minReviews: clamp(Number(workerSearchMinReviewsInput?.value || 0), 0, 100),
+    jobType: workerSearchJobTypeSelect?.value || '',
+    criterion: workerSearchCriterionSelect?.value || '',
+  },
+});
+
+const loadSavedRefreshDefaults = () => {
+  try {
+    return JSON.parse(localStorage.getItem(FILTER_DEFAULTS_KEY) || 'null');
+  } catch {
+    return null;
+  }
+};
+
+const applySavedRefreshDefaults = () => {
+  const saved = loadSavedRefreshDefaults();
+  if (!saved) {
+    applyDefaultWorkerSearchModes();
+    return;
+  }
+
+  const dashboard = saved.dashboard || {};
+  if (dashboardShowTopInput) dashboardShowTopInput.checked = Boolean(dashboard.showTop);
+  if (dashboardTopCountInput) dashboardTopCountInput.value = String(clamp(Number(dashboard.topCount || 5), 1, 25));
+  if (dashboardShowBottomInput) dashboardShowBottomInput.checked = Boolean(dashboard.showBottom);
+  if (dashboardBottomCountInput) dashboardBottomCountInput.value = String(clamp(Number(dashboard.bottomCount || 5), 1, 25));
+  if (dashboardShowMostConsistentInput) dashboardShowMostConsistentInput.checked = Boolean(dashboard.showMostConsistent);
+  if (dashboardMostConsistentCountInput) dashboardMostConsistentCountInput.value = String(clamp(Number(dashboard.mostConsistentCount || 5), 1, 25));
+  if (dashboardShowLeastConsistentInput) dashboardShowLeastConsistentInput.checked = Boolean(dashboard.showLeastConsistent);
+  if (dashboardLeastConsistentCountInput) dashboardLeastConsistentCountInput.value = String(clamp(Number(dashboard.leastConsistentCount || 5), 1, 25));
+  if (dashboardEnableMinReviewsInput) dashboardEnableMinReviewsInput.checked = Boolean(dashboard.minReviewsEnabled);
+  if (dashboardMinReviewsInput) dashboardMinReviewsInput.value = String(clamp(Number(dashboard.minReviews || 0), 0, 50));
+
+  const workerSearch = saved.workerSearch || {};
+  if (workerSearchNameInput) workerSearchNameInput.value = String(workerSearch.name || '');
+  const modes = Array.isArray(workerSearch.modes) && workerSearch.modes.length ? new Set(workerSearch.modes) : new Set(['top', 'bad']);
+  workerSearchModeInputs.forEach((input) => {
+    input.checked = modes.has(input.value);
+  });
+  if (workerSearchScopeSelect) workerSearchScopeSelect.value = workerSearch.scope || 'all';
+  if (workerSearchPerformanceSelect) workerSearchPerformanceSelect.value = workerSearch.performance || '';
+  if (workerSearchMinReviewsInput) workerSearchMinReviewsInput.value = String(clamp(Number(workerSearch.minReviews || 0), 0, 100));
+  if (workerSearchJobTypeSelect) workerSearchJobTypeSelect.value = workerSearch.jobType || '';
+  if (workerSearchCriterionSelect) workerSearchCriterionSelect.value = workerSearch.criterion || '';
+};
+
+const saveCurrentRefreshDefaults = () => {
+  localStorage.setItem(FILTER_DEFAULTS_KEY, JSON.stringify(captureCurrentRefreshDefaults()));
 };
 
 
@@ -3484,8 +3554,7 @@ addProfileForm.addEventListener('submit', async (event) => {
     if (shouldMerge && editingProfileId) {
       try {
         await mergeProfiles(editingProfileId, firstMatch.id);
-        applyDefaultWorkerSearchModes();
-      await refreshFromBackend();
+        await refreshFromBackend();
         return;
       } catch (error) {
         alert(error.message || 'Unable to merge profiles');
@@ -3541,10 +3610,20 @@ if (refreshMaintenanceReportButton) {
 if (refreshProfilesButton) {
   refreshProfilesButton.addEventListener('click', async () => {
     try {
-      applyDefaultWorkerSearchModes();
+      applySavedRefreshDefaults();
       await refreshFromBackend();
     } catch {
       // status text already updated in refreshFromBackend
+    }
+  });
+}
+
+
+if (saveRefreshDefaultsButton) {
+  saveRefreshDefaultsButton.addEventListener('click', () => {
+    saveCurrentRefreshDefaults();
+    if (dataSyncStatus) {
+      dataSyncStatus.textContent = 'Saved current filters as refresh defaults.';
     }
   });
 }
@@ -3760,7 +3839,7 @@ if (window.location.hash === '#admin-settings') {
 } else {
   showMainView('dashboard');
 }
-applyDefaultWorkerSearchModes();
+applySavedRefreshDefaults();
 refreshFromBackend().catch((error) => {
   workerProfileDetail.innerHTML = `<p class="hint">Backend unavailable: ${error.message}</p>`;
 });
