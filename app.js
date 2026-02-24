@@ -25,12 +25,14 @@ const dashboardShowTopInput = document.getElementById('dashboard-show-top');
 const dashboardTopCountInput = document.getElementById('dashboard-top-count');
 const dashboardShowBottomInput = document.getElementById('dashboard-show-bottom');
 const dashboardBottomCountInput = document.getElementById('dashboard-bottom-count');
-const dashboardEnableMinReviewsInput = document.getElementById('dashboard-enable-min-reviews');
-const dashboardMinReviewsInput = document.getElementById('dashboard-min-reviews');
+const dashboardTopMinReviewsInput = document.getElementById('dashboard-top-min-reviews');
+const dashboardBottomMinReviewsInput = document.getElementById('dashboard-bottom-min-reviews');
 const dashboardShowMostConsistentInput = document.getElementById('dashboard-show-most-consistent');
 const dashboardMostConsistentCountInput = document.getElementById('dashboard-most-consistent-count');
 const dashboardShowLeastConsistentInput = document.getElementById('dashboard-show-least-consistent');
 const dashboardLeastConsistentCountInput = document.getElementById('dashboard-least-consistent-count');
+const dashboardMostConsistentMinReviewsInput = document.getElementById('dashboard-most-consistent-min-reviews');
+const dashboardLeastConsistentMinReviewsInput = document.getElementById('dashboard-least-consistent-min-reviews');
 const dashboardTopBand = document.getElementById('dashboard-top-band');
 const dashboardBottomBand = document.getElementById('dashboard-bottom-band');
 const dashboardMostConsistentBand = document.getElementById('dashboard-most-consistent-band');
@@ -40,6 +42,10 @@ const leastConsistentPerformersList = document.getElementById('least-consistent-
 const clearButton = document.getElementById('clear-data');
 const refreshProfilesButton = document.getElementById('refresh-profiles');
 const saveRefreshDefaultsButton = document.getElementById('save-refresh-defaults');
+const dashboardPresetBalancedButton = document.getElementById('dashboard-preset-balanced');
+const dashboardPresetTopOnlyButton = document.getElementById('dashboard-preset-top-only');
+const dashboardPresetAttentionOnlyButton = document.getElementById('dashboard-preset-attention-only');
+const dashboardPresetResetButton = document.getElementById('dashboard-preset-reset');
 const dataSyncStatus = document.getElementById('data-sync-status');
 const jobTypeSelect = document.getElementById('job-type');
 const workerSelector = document.getElementById('worker-selector');
@@ -306,8 +312,10 @@ const captureCurrentRefreshDefaults = () => ({
     mostConsistentCount: clamp(Number(dashboardMostConsistentCountInput?.value || 5), 1, 25),
     showLeastConsistent: Boolean(dashboardShowLeastConsistentInput?.checked),
     leastConsistentCount: clamp(Number(dashboardLeastConsistentCountInput?.value || 5), 1, 25),
-    minReviewsEnabled: Boolean(dashboardEnableMinReviewsInput?.checked),
-    minReviews: clamp(Number(dashboardMinReviewsInput?.value || 0), 0, 50),
+    topMinReviews: clamp(Number(dashboardTopMinReviewsInput?.value || 0), 0, 50),
+    bottomMinReviews: clamp(Number(dashboardBottomMinReviewsInput?.value || 0), 0, 50),
+    mostConsistentMinReviews: clamp(Number(dashboardMostConsistentMinReviewsInput?.value || 0), 0, 50),
+    leastConsistentMinReviews: clamp(Number(dashboardLeastConsistentMinReviewsInput?.value || 0), 0, 50),
   },
   workerSearch: {
     name: String(workerSearchNameInput?.value || ''),
@@ -344,8 +352,11 @@ const applySavedRefreshDefaults = () => {
   if (dashboardMostConsistentCountInput) dashboardMostConsistentCountInput.value = String(clamp(Number(dashboard.mostConsistentCount || 5), 1, 25));
   if (dashboardShowLeastConsistentInput) dashboardShowLeastConsistentInput.checked = Boolean(dashboard.showLeastConsistent);
   if (dashboardLeastConsistentCountInput) dashboardLeastConsistentCountInput.value = String(clamp(Number(dashboard.leastConsistentCount || 5), 1, 25));
-  if (dashboardEnableMinReviewsInput) dashboardEnableMinReviewsInput.checked = Boolean(dashboard.minReviewsEnabled);
-  if (dashboardMinReviewsInput) dashboardMinReviewsInput.value = String(clamp(Number(dashboard.minReviews || 0), 0, 50));
+  const legacyMinReviews = clamp(Number(dashboard.minReviews || 0), 0, 50);
+  if (dashboardTopMinReviewsInput) dashboardTopMinReviewsInput.value = String(clamp(Number(dashboard.topMinReviews ?? legacyMinReviews), 0, 50));
+  if (dashboardBottomMinReviewsInput) dashboardBottomMinReviewsInput.value = String(clamp(Number(dashboard.bottomMinReviews ?? legacyMinReviews), 0, 50));
+  if (dashboardMostConsistentMinReviewsInput) dashboardMostConsistentMinReviewsInput.value = String(clamp(Number(dashboard.mostConsistentMinReviews ?? legacyMinReviews), 0, 50));
+  if (dashboardLeastConsistentMinReviewsInput) dashboardLeastConsistentMinReviewsInput.value = String(clamp(Number(dashboard.leastConsistentMinReviews ?? legacyMinReviews), 0, 50));
 
   const workerSearch = saved.workerSearch || {};
   if (workerSearchNameInput) workerSearchNameInput.value = String(workerSearch.name || '');
@@ -362,6 +373,66 @@ const applySavedRefreshDefaults = () => {
 
 const saveCurrentRefreshDefaults = () => {
   localStorage.setItem(FILTER_DEFAULTS_KEY, JSON.stringify(captureCurrentRefreshDefaults()));
+};
+
+const applyDashboardPreset = (preset) => {
+  const setChecked = (input, value) => {
+    if (input) input.checked = Boolean(value);
+  };
+  const setNumber = (input, value, min, max) => {
+    if (input) input.value = String(clamp(Number(value), min, max));
+  };
+
+  if (preset === 'top-only') {
+    setChecked(dashboardShowTopInput, true);
+    setNumber(dashboardTopCountInput, 5, 1, 25);
+    setChecked(dashboardShowBottomInput, false);
+    setChecked(dashboardShowMostConsistentInput, false);
+    setChecked(dashboardShowLeastConsistentInput, false);
+    setNumber(dashboardTopMinReviewsInput, 3, 0, 50);
+    setNumber(dashboardBottomMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardMostConsistentMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardLeastConsistentMinReviewsInput, 0, 0, 50);
+  } else if (preset === 'attention-only') {
+    setChecked(dashboardShowTopInput, false);
+    setChecked(dashboardShowBottomInput, true);
+    setNumber(dashboardBottomCountInput, 5, 1, 25);
+    setChecked(dashboardShowMostConsistentInput, false);
+    setChecked(dashboardShowLeastConsistentInput, true);
+    setNumber(dashboardLeastConsistentCountInput, 5, 1, 25);
+    setNumber(dashboardTopMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardBottomMinReviewsInput, 3, 0, 50);
+    setNumber(dashboardMostConsistentMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardLeastConsistentMinReviewsInput, 3, 0, 50);
+  } else if (preset === 'balanced') {
+    setChecked(dashboardShowTopInput, true);
+    setNumber(dashboardTopCountInput, 5, 1, 25);
+    setChecked(dashboardShowBottomInput, true);
+    setNumber(dashboardBottomCountInput, 5, 1, 25);
+    setChecked(dashboardShowMostConsistentInput, true);
+    setNumber(dashboardMostConsistentCountInput, 3, 1, 25);
+    setChecked(dashboardShowLeastConsistentInput, true);
+    setNumber(dashboardLeastConsistentCountInput, 3, 1, 25);
+    setNumber(dashboardTopMinReviewsInput, 3, 0, 50);
+    setNumber(dashboardBottomMinReviewsInput, 3, 0, 50);
+    setNumber(dashboardMostConsistentMinReviewsInput, 3, 0, 50);
+    setNumber(dashboardLeastConsistentMinReviewsInput, 3, 0, 50);
+  } else {
+    setChecked(dashboardShowTopInput, true);
+    setNumber(dashboardTopCountInput, 5, 1, 25);
+    setChecked(dashboardShowBottomInput, true);
+    setNumber(dashboardBottomCountInput, 5, 1, 25);
+    setChecked(dashboardShowMostConsistentInput, false);
+    setNumber(dashboardMostConsistentCountInput, 5, 1, 25);
+    setChecked(dashboardShowLeastConsistentInput, false);
+    setNumber(dashboardLeastConsistentCountInput, 5, 1, 25);
+    setNumber(dashboardTopMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardBottomMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardMostConsistentMinReviewsInput, 0, 0, 50);
+    setNumber(dashboardLeastConsistentMinReviewsInput, 0, 0, 50);
+  }
+
+  renderProfiles(profilesCache);
 };
 
 
@@ -1612,18 +1683,21 @@ const renderProfiles = (profiles) => {
   const bottomCount = clamp(Number(dashboardBottomCountInput?.value || 5), 1, 25);
   const mostConsistentCount = clamp(Number(dashboardMostConsistentCountInput?.value || 5), 1, 25);
   const leastConsistentCount = clamp(Number(dashboardLeastConsistentCountInput?.value || 5), 1, 25);
-  const minReviewsEnabled = Boolean(dashboardEnableMinReviewsInput?.checked);
-  const minReviews = clamp(Number(dashboardMinReviewsInput?.value || 0), 0, 50);
+  const topMinReviews = clamp(Number(dashboardTopMinReviewsInput?.value || 0), 0, 50);
+  const bottomMinReviews = clamp(Number(dashboardBottomMinReviewsInput?.value || 0), 0, 50);
+  const mostConsistentMinReviews = clamp(Number(dashboardMostConsistentMinReviewsInput?.value || 0), 0, 50);
+  const leastConsistentMinReviews = clamp(Number(dashboardLeastConsistentMinReviewsInput?.value || 0), 0, 50);
 
   const sortedByRank = [...profiles].sort((a, b) => computeRankScore(b).rankScore - computeRankScore(a).rankScore);
-  const eligibleByRank = minReviewsEnabled
-    ? sortedByRank.filter((profile) => (profile.ratings || []).length >= minReviews)
-    : sortedByRank;
+  const topEligible = sortedByRank.filter((profile) => (profile.ratings || []).length >= topMinReviews);
+  const bottomEligible = sortedByRank.filter((profile) => (profile.ratings || []).length >= bottomMinReviews);
+  const mostConsistentEligible = sortedByRank.filter((profile) => (profile.ratings || []).length >= mostConsistentMinReviews);
+  const leastConsistentEligible = sortedByRank.filter((profile) => (profile.ratings || []).length >= leastConsistentMinReviews);
 
-  const eligibleWithRatings = eligibleByRank.filter((profile) => (profile.ratings || []).length);
-  const sortedByConsistencyDesc = [...eligibleWithRatings]
+  const sortedByConsistencyDesc = [...mostConsistentEligible]
     .sort((a, b) => Number(b.analytics?.consistencyScore || 0) - Number(a.analytics?.consistencyScore || 0));
-  const sortedByConsistencyAsc = [...sortedByConsistencyDesc].reverse();
+  const sortedByConsistencyAsc = [...leastConsistentEligible]
+    .sort((a, b) => Number(a.analytics?.consistencyScore || 0) - Number(b.analytics?.consistencyScore || 0));
 
   if (dashboardTopBand) dashboardTopBand.classList.toggle('hidden', !showTop);
   if (dashboardBottomBand) dashboardBottomBand.classList.toggle('hidden', !showBottom);
@@ -1636,41 +1710,37 @@ const renderProfiles = (profiles) => {
     return;
   }
 
-  if (!eligibleByRank.length) {
-    if (showTop) renderPreviewCards(topPerformersList, 'top');
-    if (showBottom) renderPreviewCards(profilesList, 'bad');
-    if (showMostConsistent && mostConsistentPerformersList) {
-      mostConsistentPerformersList.innerHTML = '<li class="profile-item">No consistent workers match this filter yet.</li>';
-    }
-    if (showLeastConsistent && leastConsistentPerformersList) {
-      leastConsistentPerformersList.innerHTML = '<li class="profile-item">No consistency history matches this filter yet.</li>';
-    }
-    return;
-  }
-
-  const topPerformers = showTop ? eligibleByRank.slice(0, topCount) : [];
-  const badWorkers = showBottom ? [...eligibleByRank].reverse().slice(0, bottomCount) : [];
+  const topPerformers = showTop ? topEligible.slice(0, topCount) : [];
+  const badWorkers = showBottom ? [...bottomEligible].reverse().slice(0, bottomCount) : [];
   const mostConsistentWorkers = showMostConsistent ? sortedByConsistencyDesc.slice(0, mostConsistentCount) : [];
   const leastConsistentWorkers = showLeastConsistent ? sortedByConsistencyAsc.slice(0, leastConsistentCount) : [];
 
   if (topPerformersList && showTop) {
-    topPerformers.forEach((profile) => {
-      const item = document.createElement('li');
-      item.className = 'profile-item top-performer-card';
-      const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
-      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
-      topPerformersList.appendChild(item);
-    });
+    if (!topPerformers.length) {
+      topPerformersList.innerHTML = '<li class="profile-item">No workers meet the minimum reviews for this section.</li>';
+    } else {
+      topPerformers.forEach((profile) => {
+        const item = document.createElement('li');
+        item.className = 'profile-item top-performer-card';
+        const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+        item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
+        topPerformersList.appendChild(item);
+      });
+    }
   }
 
   if (showBottom) {
-    badWorkers.forEach((profile) => {
-      const item = document.createElement('li');
-      item.className = 'profile-item at-risk-preview';
-      const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
-      item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
-      profilesList.appendChild(item);
-    });
+    if (!badWorkers.length) {
+      profilesList.innerHTML = '<li class="profile-item">No workers meet the minimum reviews for this section.</li>';
+    } else {
+      badWorkers.forEach((profile) => {
+        const item = document.createElement('li');
+        item.className = 'profile-item at-risk-preview';
+        const rankPosition = sortedByRank.findIndex((entry) => String(entry.id) === String(profile.id)) + 1;
+        item.innerHTML = buildProfileCardMarkup(profile, { condensed: true, rankPosition, totalWorkers: sortedByRank.length });
+        profilesList.appendChild(item);
+      });
+    }
   }
 
   if (showMostConsistent && mostConsistentPerformersList) {
@@ -3628,6 +3698,22 @@ if (saveRefreshDefaultsButton) {
   });
 }
 
+if (dashboardPresetBalancedButton) {
+  dashboardPresetBalancedButton.addEventListener('click', () => applyDashboardPreset('balanced'));
+}
+
+if (dashboardPresetTopOnlyButton) {
+  dashboardPresetTopOnlyButton.addEventListener('click', () => applyDashboardPreset('top-only'));
+}
+
+if (dashboardPresetAttentionOnlyButton) {
+  dashboardPresetAttentionOnlyButton.addEventListener('click', () => applyDashboardPreset('attention-only'));
+}
+
+if (dashboardPresetResetButton) {
+  dashboardPresetResetButton.addEventListener('click', () => applyDashboardPreset('reset'));
+}
+
 
 if (profileSearchInput) {
   profileSearchInput.addEventListener('input', () => {
@@ -3635,7 +3721,7 @@ if (profileSearchInput) {
   });
 }
 
-[dashboardShowTopInput, dashboardTopCountInput, dashboardShowBottomInput, dashboardBottomCountInput, dashboardShowMostConsistentInput, dashboardMostConsistentCountInput, dashboardShowLeastConsistentInput, dashboardLeastConsistentCountInput, dashboardEnableMinReviewsInput, dashboardMinReviewsInput]
+[dashboardShowTopInput, dashboardTopCountInput, dashboardTopMinReviewsInput, dashboardShowBottomInput, dashboardBottomCountInput, dashboardBottomMinReviewsInput, dashboardShowMostConsistentInput, dashboardMostConsistentCountInput, dashboardMostConsistentMinReviewsInput, dashboardShowLeastConsistentInput, dashboardLeastConsistentCountInput, dashboardLeastConsistentMinReviewsInput]
   .filter(Boolean)
   .forEach((field) => {
     field.addEventListener('input', () => {
